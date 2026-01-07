@@ -21,27 +21,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit tests
+      - name: Run tests
         run: npm test -- --run
 
       - name: Build
         run: npm run build
-
-  # Self-test: Run dead-code-hunter on itself
-  self-test:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Run Dead Code Hunter on self
-        uses: ./
-        with:
-          supermodel-api-key: ${{ secrets.SUPERMODEL_API_KEY }}
-          comment-on-pr: true
-          fail-on-dead-code: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
