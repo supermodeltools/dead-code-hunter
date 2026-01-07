@@ -41,6 +41,13 @@ async function generateIdempotencyKey(workspacePath: string): Promise<string> {
 async function run(): Promise<void> {
   try {
     const apiKey = core.getInput('supermodel-api-key', { required: true });
+
+    // Validate API key format
+    if (!apiKey.startsWith('smsk_')) {
+      core.warning('API key does not start with expected prefix "smsk_"');
+    }
+    core.info(`API key configured (${apiKey.length} chars, starts with: ${apiKey.substring(0, 10)}...)`);
+
     const commentOnPr = core.getBooleanInput('comment-on-pr');
     const failOnDeadCode = core.getBooleanInput('fail-on-dead-code');
     const ignorePatterns = JSON.parse(core.getInput('ignore-patterns') || '[]');
@@ -117,7 +124,18 @@ async function run(): Promise<void> {
       core.setFailed(`Found ${deadCode.length} dead code functions`);
     }
 
-  } catch (error) {
+  } catch (error: any) {
+    // Log detailed error info for debugging
+    if (error.response) {
+      try {
+        const body = await error.response.text();
+        core.error(`API Error - Status: ${error.response.status}`);
+        core.error(`API Error - Body: ${body}`);
+      } catch {
+        core.error(`API Error - Status: ${error.response.status}`);
+      }
+    }
+
     if (error instanceof Error) {
       core.setFailed(error.message);
     } else {
