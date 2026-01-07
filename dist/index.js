@@ -32280,6 +32280,145 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 1655:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ENTRY_POINT_FUNCTION_NAMES = exports.ENTRY_POINT_PATTERNS = exports.DEFAULT_EXCLUDE_PATTERNS = void 0;
+exports.isEntryPointFile = isEntryPointFile;
+exports.isEntryPointFunction = isEntryPointFunction;
+exports.shouldIgnoreFile = shouldIgnoreFile;
+exports.findDeadCode = findDeadCode;
+exports.formatPrComment = formatPrComment;
+const minimatch_1 = __nccwpck_require__(6507);
+exports.DEFAULT_EXCLUDE_PATTERNS = [
+    '**/node_modules/**',
+    '**/dist/**',
+    '**/build/**',
+    '**/.git/**',
+    '**/vendor/**',
+    '**/target/**',
+    '**/*.test.ts',
+    '**/*.test.tsx',
+    '**/*.test.js',
+    '**/*.test.jsx',
+    '**/*.spec.ts',
+    '**/*.spec.tsx',
+    '**/*.spec.js',
+    '**/*.spec.jsx',
+    '**/__tests__/**',
+    '**/__mocks__/**',
+];
+exports.ENTRY_POINT_PATTERNS = [
+    '**/index.ts',
+    '**/index.js',
+    '**/main.ts',
+    '**/main.js',
+    '**/app.ts',
+    '**/app.js',
+    '**/*.test.*',
+    '**/*.spec.*',
+    '**/__tests__/**',
+];
+exports.ENTRY_POINT_FUNCTION_NAMES = [
+    'main',
+    'run',
+    'start',
+    'init',
+    'setup',
+    'bootstrap',
+    'default',
+    'handler',
+    'GET', 'POST', 'PUT', 'DELETE', 'PATCH',
+];
+function isEntryPointFile(filePath) {
+    return exports.ENTRY_POINT_PATTERNS.some(pattern => (0, minimatch_1.minimatch)(filePath, pattern));
+}
+function isEntryPointFunction(name) {
+    const lowerName = name.toLowerCase();
+    return exports.ENTRY_POINT_FUNCTION_NAMES.some(ep => lowerName === ep.toLowerCase());
+}
+function shouldIgnoreFile(filePath, ignorePatterns = []) {
+    const allPatterns = [...exports.DEFAULT_EXCLUDE_PATTERNS, ...ignorePatterns];
+    return allPatterns.some(pattern => (0, minimatch_1.minimatch)(filePath, pattern));
+}
+function findDeadCode(nodes, relationships, ignorePatterns = []) {
+    // Get all function nodes
+    const functionNodes = nodes.filter(node => node.labels?.includes('Function'));
+    // Get all "calls" relationships
+    const callRelationships = relationships.filter(rel => rel.type === 'calls');
+    // Build a set of all function IDs that are called
+    const calledFunctionIds = new Set(callRelationships.map(rel => rel.endNode));
+    const deadCode = [];
+    for (const node of functionNodes) {
+        const props = node.properties || {};
+        const filePath = props.filePath || props.file || '';
+        const name = props.name || 'anonymous';
+        // Skip if this function is called somewhere
+        if (calledFunctionIds.has(node.id)) {
+            continue;
+        }
+        // Skip if file matches ignore patterns
+        if (shouldIgnoreFile(filePath, ignorePatterns)) {
+            continue;
+        }
+        // Skip if this is an entry point file
+        if (isEntryPointFile(filePath)) {
+            continue;
+        }
+        // Skip if this is an entry point function name
+        if (isEntryPointFunction(name)) {
+            continue;
+        }
+        // Skip exported functions (they might be called externally)
+        if (props.exported === true || props.isExported === true) {
+            continue;
+        }
+        deadCode.push({
+            id: node.id,
+            name,
+            filePath,
+            startLine: props.startLine,
+            endLine: props.endLine,
+        });
+    }
+    return deadCode;
+}
+function formatPrComment(deadCode) {
+    if (deadCode.length === 0) {
+        return `## Dead Code Hunter
+
+No dead code found! Your codebase is clean.`;
+    }
+    const rows = deadCode
+        .slice(0, 50)
+        .map(dc => {
+        const lineInfo = dc.startLine ? `L${dc.startLine}` : '';
+        const fileLink = dc.startLine
+            ? `${dc.filePath}#L${dc.startLine}`
+            : dc.filePath;
+        return `| \`${dc.name}\` | ${fileLink} | ${lineInfo} |`;
+    })
+        .join('\n');
+    let comment = `## Dead Code Hunter
+
+Found **${deadCode.length}** potentially unused function${deadCode.length === 1 ? '' : 's'}:
+
+| Function | File | Line |
+|----------|------|------|
+${rows}`;
+    if (deadCode.length > 50) {
+        comment += `\n\n_...and ${deadCode.length - 50} more. See action output for full list._`;
+    }
+    comment += `\n\n---\n_Powered by [Supermodel](https://supermodeltools.com) call graph analysis_`;
+    return comment;
+}
+
+
+/***/ }),
+
 /***/ 9407:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -32325,52 +32464,7 @@ const github = __importStar(__nccwpck_require__(3228));
 const fs = __importStar(__nccwpck_require__(1943));
 const path = __importStar(__nccwpck_require__(6928));
 const sdk_1 = __nccwpck_require__(6381);
-const minimatch_1 = __nccwpck_require__(6507);
-// Default patterns to exclude from analysis
-const DEFAULT_EXCLUDE_PATTERNS = [
-    '**/node_modules/**',
-    '**/dist/**',
-    '**/build/**',
-    '**/.git/**',
-    '**/vendor/**',
-    '**/target/**',
-    '**/*.test.ts',
-    '**/*.test.tsx',
-    '**/*.test.js',
-    '**/*.test.jsx',
-    '**/*.spec.ts',
-    '**/*.spec.tsx',
-    '**/*.spec.js',
-    '**/*.spec.jsx',
-    '**/__tests__/**',
-    '**/__mocks__/**',
-];
-// Patterns that indicate a function is an entry point (not dead code)
-const ENTRY_POINT_PATTERNS = [
-    // Common entry point file names
-    '**/index.ts',
-    '**/index.js',
-    '**/main.ts',
-    '**/main.js',
-    '**/app.ts',
-    '**/app.js',
-    // Test files (functions here aren't "dead")
-    '**/*.test.*',
-    '**/*.spec.*',
-    '**/__tests__/**',
-];
-// Function names that are typically entry points
-const ENTRY_POINT_FUNCTION_NAMES = [
-    'main',
-    'run',
-    'start',
-    'init',
-    'setup',
-    'bootstrap',
-    'default', // default exports
-    'handler', // serverless handlers
-    'GET', 'POST', 'PUT', 'DELETE', 'PATCH', // HTTP method handlers
-];
+const dead_code_1 = __nccwpck_require__(1655);
 async function createZipArchive(workspacePath) {
     const zipPath = path.join(workspacePath, '.dead-code-hunter-repo.zip');
     core.info('Creating zip archive using git archive...');
@@ -32394,91 +32488,6 @@ async function generateIdempotencyKey(workspacePath) {
     const commitHash = output.trim();
     const repoName = path.basename(workspacePath);
     return `${repoName}:call:${commitHash}`;
-}
-function isEntryPointFile(filePath) {
-    return ENTRY_POINT_PATTERNS.some(pattern => (0, minimatch_1.minimatch)(filePath, pattern));
-}
-function isEntryPointFunction(name) {
-    const lowerName = name.toLowerCase();
-    return ENTRY_POINT_FUNCTION_NAMES.some(ep => lowerName === ep.toLowerCase());
-}
-function shouldIgnoreFile(filePath, ignorePatterns) {
-    const allPatterns = [...DEFAULT_EXCLUDE_PATTERNS, ...ignorePatterns];
-    return allPatterns.some(pattern => (0, minimatch_1.minimatch)(filePath, pattern));
-}
-function findDeadCode(nodes, relationships, ignorePatterns) {
-    // Get all function nodes
-    const functionNodes = nodes.filter(node => node.labels?.includes('Function'));
-    core.info(`Found ${functionNodes.length} functions in codebase`);
-    // Get all "calls" relationships - these tell us which functions are called
-    const callRelationships = relationships.filter(rel => rel.type === 'calls');
-    core.info(`Found ${callRelationships.length} call relationships`);
-    // Build a set of all function IDs that are called (endNode of a "calls" relationship)
-    const calledFunctionIds = new Set(callRelationships.map(rel => rel.endNode));
-    // Find functions that are never called
-    const deadCode = [];
-    for (const node of functionNodes) {
-        const props = node.properties || {};
-        const filePath = props.filePath || props.file || '';
-        const name = props.name || 'anonymous';
-        // Skip if this function is called somewhere
-        if (calledFunctionIds.has(node.id)) {
-            continue;
-        }
-        // Skip if file matches ignore patterns
-        if (shouldIgnoreFile(filePath, ignorePatterns)) {
-            continue;
-        }
-        // Skip if this is an entry point file
-        if (isEntryPointFile(filePath)) {
-            continue;
-        }
-        // Skip if this is an entry point function name
-        if (isEntryPointFunction(name)) {
-            continue;
-        }
-        // Skip exported functions (they might be called externally)
-        if (props.exported === true || props.isExported === true) {
-            continue;
-        }
-        deadCode.push({
-            id: node.id,
-            name,
-            filePath,
-            startLine: props.startLine,
-            endLine: props.endLine,
-        });
-    }
-    return deadCode;
-}
-function formatPrComment(deadCode) {
-    if (deadCode.length === 0) {
-        return `## Dead Code Hunter
-
-No dead code found! Your codebase is clean.`;
-    }
-    const rows = deadCode
-        .slice(0, 50) // Limit to 50 to avoid huge comments
-        .map(dc => {
-        const lineInfo = dc.startLine ? `L${dc.startLine}` : '';
-        const fileLink = dc.startLine
-            ? `${dc.filePath}#L${dc.startLine}`
-            : dc.filePath;
-        return `| \`${dc.name}\` | ${fileLink} | ${lineInfo} |`;
-    })
-        .join('\n');
-    let comment = `## Dead Code Hunter
-
-Found **${deadCode.length}** potentially unused function${deadCode.length === 1 ? '' : 's'}:
-
-| Function | File | Line |
-|----------|------|------|
-${rows}`;
-    if (deadCode.length > 50) {
-        comment += `\n\n_...and ${deadCode.length - 50} more. See action output for full list._`;
-    }
-    comment += `\n\n---\n_Powered by [Supermodel](https://supermodeltools.com) call graph analysis_`;
-    return comment;
 }
 async function run() {
     try {
@@ -32511,7 +32520,7 @@ async function run() {
         // Step 4: Analyze for dead code
         const nodes = response.graph?.nodes || [];
         const relationships = response.graph?.relationships || [];
-        const deadCode = findDeadCode(nodes, relationships, ignorePatterns);
+        const deadCode = (0, dead_code_1.findDeadCode)(nodes, relationships, ignorePatterns);
         core.info(`Found ${deadCode.length} potentially dead functions`);
         // Step 5: Set outputs
         core.setOutput('dead-code-count', deadCode.length);
@@ -32521,7 +32530,7 @@ async function run() {
             const token = process.env.GITHUB_TOKEN;
             if (token) {
                 const octokit = github.getOctokit(token);
-                const comment = formatPrComment(deadCode);
+                const comment = (0, dead_code_1.formatPrComment)(deadCode);
                 await octokit.rest.issues.createComment({
                     owner: github.context.repo.owner,
                     repo: github.context.repo.repo,
