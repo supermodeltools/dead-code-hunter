@@ -8,8 +8,12 @@ branding:
 
 inputs:
   supermodel-api-key:
-    description: 'Supermodel API key'
+    description: 'Supermodel API key from https://supermodeltools.com'
     required: true
+  github-token:
+    description: 'GitHub token for posting PR comments (defaults to github.token)'
+    required: false
+    default: ${{ github.token }}
   comment-on-pr:
     description: 'Post findings as PR comment'
     required: false
@@ -22,10 +26,6 @@ inputs:
     description: 'JSON array of glob patterns to ignore'
     required: false
     default: '[]'
-  auto-pr:
-    description: 'Create PR to remove dead code'
-    required: false
-    default: 'false'
 
 outputs:
   dead-code-count:
