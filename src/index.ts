@@ -40,13 +40,14 @@ async function generateIdempotencyKey(workspacePath: string): Promise<string> {
 
 async function run(): Promise<void> {
   try {
-    const apiKey = core.getInput('supermodel-api-key', { required: true });
+    const apiKey = core.getInput('supermodel-api-key', { required: true }).trim();
 
     // Validate API key format
     if (!apiKey.startsWith('smsk_')) {
       core.warning('API key does not start with expected prefix "smsk_"');
     }
-    core.info(`API key configured (${apiKey.length} chars, starts with: ${apiKey.substring(0, 10)}...)`);
+    // Log key details for debugging (safe - only shows prefix/suffix)
+    core.info(`API key configured (${apiKey.length} chars, starts: ${apiKey.substring(0, 12)}..., ends: ...${apiKey.substring(apiKey.length - 4)})`);
 
     const commentOnPr = core.getBooleanInput('comment-on-pr');
     const failOnDeadCode = core.getBooleanInput('fail-on-dead-code');
