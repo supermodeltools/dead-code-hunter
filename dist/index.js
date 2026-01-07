@@ -32526,8 +32526,17 @@ async function run() {
         // Step 4: Analyze for dead code
         const nodes = response.graph?.nodes || [];
         const relationships = response.graph?.relationships || [];
+        // Debug: Log sample node structure
+        const functionNodes = nodes.filter(n => n.labels?.includes('Function'));
+        if (functionNodes.length > 0) {
+            core.info(`Sample function node: ${JSON.stringify(functionNodes[0], null, 2)}`);
+        }
         const deadCode = (0, dead_code_1.findDeadCode)(nodes, relationships, ignorePatterns);
         core.info(`Found ${deadCode.length} potentially dead functions`);
+        // Debug: Log dead code results
+        for (const dc of deadCode.slice(0, 5)) {
+            core.info(`Dead: ${dc.name} @ ${dc.filePath}:${dc.startLine}`);
+        }
         // Step 5: Set outputs
         core.setOutput('dead-code-count', deadCode.length);
         core.setOutput('dead-code-json', JSON.stringify(deadCode));
