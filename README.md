@@ -1,12 +1,12 @@
 # Dead Code Hunter
 
-A GitHub Action that uses [Supermodel](https://supermodeltools.com) call graphs to find unreachable functions in your codebase.
+A GitHub Action that uses [Supermodel](https://supermodeltools.com) to find unreachable functions in your codebase.
 
 ## What it does
 
 1. Creates a zip archive of your repository using `git archive`
-2. Sends it to Supermodel's call graph API
-3. Analyzes the graph to find functions with no callers
+2. Sends it to Supermodel's graph API for analysis
+3. Identifies functions with no callers (dead code)
 4. Filters out false positives (entry points, exports, tests)
 5. Posts findings as a PR comment
 
@@ -16,11 +16,13 @@ A GitHub Action that uses [Supermodel](https://supermodeltools.com) call graphs 
 name: Dead Code Hunter
 on:
   pull_request:
-  workflow_dispatch:
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: supermodeltools/dead-code-hunter@v1
@@ -30,8 +32,8 @@ jobs:
 
 ## Getting a Supermodel API Key
 
-1. Sign up at [supermodeltools.com](https://supermodeltools.com)
-2. Create an API key in the dashboard
+1. Sign up at [dashboard.supermodeltools.com](https://dashboard.supermodeltools.com)
+2. Create an API key
 3. Add it as a repository secret named `SUPERMODEL_API_KEY`
 
 ## Configuration
@@ -57,16 +59,16 @@ When dead code is found, the action posts a comment like:
 
 > ## Dead Code Hunter
 >
-> Found **7** potentially unused functions:
+> Found **3** potentially unused functions:
 >
 > | Function | File | Line |
 > |----------|------|------|
-> | `unusedHelper` | src/utils.ts#L42 | L42 |
-> | `oldValidator` | src/validation.ts#L15 | L15 |
-> | ... | ... | ... |
+> | `unusedHelperFunction` | src/example-dead-code.ts#L7 | L7 |
+> | `formatUnusedData` | src/example-dead-code.ts#L12 | L12 |
+> | `fetchUnusedData` | src/example-dead-code.ts#L17 | L17 |
 >
 > ---
-> _Powered by [Supermodel](https://supermodeltools.com) call graph analysis_
+> _Powered by [Supermodel](https://supermodeltools.com) graph analysis_
 
 ## False Positive Filtering
 
@@ -89,7 +91,7 @@ You can add custom ignore patterns:
 
 ## Supported Languages
 
-Supermodel supports call graph analysis for:
+Supermodel supports analysis for:
 
 - TypeScript / JavaScript
 - Python
@@ -102,10 +104,10 @@ Supermodel supports call graph analysis for:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  git archive    │────▶│  Supermodel API │────▶│  Call Graph     │
-│  (create zip)   │     │  /v1/graphs/call│     │  Analysis       │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                                                        │
+│  git archive    │────▶│  Supermodel API │────▶│  Graph          │
+│  (create zip)   │     │  /v1/graphs/    │     │  Analysis       │
+└─────────────────┘     │  supermodel     │     └─────────────────┘
+                        └─────────────────┘             │
                                                         ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │  PR Comment     │◀────│  Filter False   │◀────│  Find Uncalled  │

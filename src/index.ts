@@ -9,14 +9,14 @@ import { findDeadCode, formatPrComment } from './dead-code';
 async function createZipArchive(workspacePath: string): Promise<string> {
   const zipPath = path.join(workspacePath, '.dead-code-hunter-repo.zip');
 
-  core.info('Creating zip archive using git archive...');
+  core.info('Creating zip archive...');
 
   await exec.exec('git', ['archive', '-o', zipPath, 'HEAD'], {
     cwd: workspacePath,
   });
 
   const stats = await fs.stat(zipPath);
-  core.info(`Created zip archive: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+  core.info(`Archive size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
 
   return zipPath;
 }
@@ -30,17 +30,23 @@ async function generateIdempotencyKey(workspacePath: string): Promise<string> {
         output += data.toString();
       },
     },
+    silent: true,
   });
 
   const commitHash = output.trim();
   const repoName = path.basename(workspacePath);
 
-  return `${repoName}:call:${commitHash}`;
+  return `${repoName}:supermodel:${commitHash}`;
 }
 
 async function run(): Promise<void> {
   try {
-    const apiKey = core.getInput('supermodel-api-key', { required: true });
+    const apiKey = core.getInput('supermodel-api-key', { required: true }).trim();
+
+    if (!apiKey.startsWith('smsk_')) {
+      core.warning('API key format looks incorrect. Get your key at https://dashboard.supermodeltools.com');
+    }
+
     const commentOnPr = core.getBooleanInput('comment-on-pr');
     const failOnDeadCode = core.getBooleanInput('fail-on-dead-code');
     const ignorePatterns = JSON.parse(core.getInput('ignore-patterns') || '[]');
@@ -48,17 +54,15 @@ async function run(): Promise<void> {
     const workspacePath = process.env.GITHUB_WORKSPACE || process.cwd();
 
     core.info('Dead Code Hunter starting...');
-    core.info(`Workspace: ${workspacePath}`);
 
     // Step 1: Create zip archive
     const zipPath = await createZipArchive(workspacePath);
 
     // Step 2: Generate idempotency key
     const idempotencyKey = await generateIdempotencyKey(workspacePath);
-    core.info(`Idempotency key: ${idempotencyKey}`);
 
     // Step 3: Call Supermodel API
-    core.info('Calling Supermodel API for call graph...');
+    core.info('Analyzing codebase with Supermodel...');
 
     const config = new Configuration({
       basePath: process.env.SUPERMODEL_BASE_URL || 'https://api.supermodeltools.com',
@@ -70,12 +74,10 @@ async function run(): Promise<void> {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    const response = await api.generateCallGraph({
+    const response = await api.generateSupermodelGraph({
       idempotencyKey,
       file: zipBlob,
     });
-
-    core.info(`API response received. Stats: ${JSON.stringify(response.stats)}`);
 
     // Step 4: Analyze for dead code
     const nodes = response.graph?.nodes || [];
@@ -83,7 +85,7 @@ async function run(): Promise<void> {
 
     const deadCode = findDeadCode(nodes, relationships, ignorePatterns);
 
-    core.info(`Found ${deadCode.length} potentially dead functions`);
+    core.info(`Found ${deadCode.length} potentially unused functions`);
 
     // Step 5: Set outputs
     core.setOutput('dead-code-count', deadCode.length);
@@ -103,7 +105,7 @@ async function run(): Promise<void> {
           body: comment,
         });
 
-        core.info('Posted PR comment');
+        core.info('Posted findings to PR');
       } else {
         core.warning('GITHUB_TOKEN not available, skipping PR comment');
       }
@@ -114,10 +116,19 @@ async function run(): Promise<void> {
 
     // Step 8: Fail if configured and dead code found
     if (deadCode.length > 0 && failOnDeadCode) {
-      core.setFailed(`Found ${deadCode.length} dead code functions`);
+      core.setFailed(`Found ${deadCode.length} potentially unused functions`);
     }
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error.response) {
+      const status = error.response.status;
+      if (status === 401) {
+        core.error('Invalid API key. Get your key at https://dashboard.supermodeltools.com');
+      } else {
+        core.error(`API error (${status})`);
+      }
+    }
+
     if (error instanceof Error) {
       core.setFailed(error.message);
     } else {
