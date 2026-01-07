@@ -32518,11 +32518,11 @@ async function run() {
         const api = new sdk_1.DefaultApi(config);
         const zipBuffer = await fs.readFile(zipPath);
         const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
-        const response = await api.generateCallGraph({
+        const response = await api.generateSupermodelGraph({
             idempotencyKey,
             file: zipBlob,
         });
-        core.info(`API response received. Stats: ${JSON.stringify(response.stats)}`);
+        core.info(`API response received. Summary: ${JSON.stringify(response.summary)}`);
         // Step 4: Analyze for dead code
         const nodes = response.graph?.nodes || [];
         const relationships = response.graph?.relationships || [];
