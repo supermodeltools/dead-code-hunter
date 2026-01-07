@@ -1,0 +1,38 @@
+name: 'Dead Code Hunter'
+description: 'Find unreachable functions in your codebase using Supermodel call graphs'
+author: 'Supermodel Tools'
+
+branding:
+  icon: 'search'
+  color: 'red'
+
+inputs:
+  supermodel-api-key:
+    description: 'Supermodel API key'
+    required: true
+  comment-on-pr:
+    description: 'Post findings as PR comment'
+    required: false
+    default: 'true'
+  fail-on-dead-code:
+    description: 'Fail the action if dead code is found'
+    required: false
+    default: 'false'
+  ignore-patterns:
+    description: 'JSON array of glob patterns to ignore'
+    required: false
+    default: '[]'
+  auto-pr:
+    description: 'Create PR to remove dead code'
+    required: false
+    default: 'false'
+
+outputs:
+  dead-code-count:
+    description: 'Number of dead code functions found'
+  dead-code-json:
+    description: 'JSON array of dead code findings'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

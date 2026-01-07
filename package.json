@@ -1,0 +1,35 @@
+{
+  "name": "dead-code-hunter",
+  "version": "0.1.0",
+  "description": "GitHub Action to find unreachable functions using Supermodel call graphs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "ncc build src/index.ts -o dist",
+    "test": "vitest",
+    "lint": "eslint src"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/supermodeltools/dead-code-hunter.git"
+  },
+  "keywords": [
+    "github-action",
+    "dead-code",
+    "static-analysis",
+    "supermodel",
+    "call-graph"
+  ],
+  "author": "Supermodel Tools",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/github": "^6.0.0",
+    "@supermodel/typescript-sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vercel/ncc": "^0.38.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
