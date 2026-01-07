@@ -32,8 +32,8 @@ jobs:
 
 ## Getting a Supermodel API Key
 
-1. Sign up at [supermodeltools.com](https://supermodeltools.com)
-2. Create an API key in the dashboard
+1. Sign up at [dashboard.supermodeltools.com](https://dashboard.supermodeltools.com)
+2. Create an API key
 3. Add it as a repository secret named `SUPERMODEL_API_KEY`
 
 ## Configuration
