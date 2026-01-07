@@ -68,7 +68,7 @@ When dead code is found, the action posts a comment like:
 > | `fetchUnusedData` | src/example-dead-code.ts#L17 | L17 |
 >
 > ---
-> _Powered by [Supermodel](https://supermodeltools.com) call graph analysis_
+> _Powered by [Supermodel](https://supermodeltools.com) graph analysis_
 
 ## False Positive Filtering
 

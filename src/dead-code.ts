@@ -156,7 +156,7 @@ ${rows}`;
     comment += `\n\n_...and ${deadCode.length - 50} more. See action output for full list._`;
   }
 
-  comment += `\n\n---\n_Powered by [Supermodel](https://supermodeltools.com) call graph analysis_`;
+  comment += `\n\n---\n_Powered by [Supermodel](https://supermodeltools.com) graph analysis_`;
 
   return comment;
 }
