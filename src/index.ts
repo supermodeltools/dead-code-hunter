@@ -6,6 +6,83 @@ import * as path from 'path';
 import { Configuration, DefaultApi } from '@supermodeltools/sdk';
 import { findDeadCode, formatPrComment } from './dead-code';
 
+/** Fields that should be redacted from logs */
+const SENSITIVE_KEYS = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'access_token',
+  'refresh_token',
+  'api_key',
+  'apikey',
+  'password',
+  'secret',
+  'token',
+  'x-api-key',
+]);
+
+const MAX_VALUE_LENGTH = 1000;
+
+/**
+ * Safely serialize a value for logging, handling circular refs, BigInt, and large values.
+ * Redacts sensitive fields.
+ */
+function safeSerialize(value: unknown, maxLength = MAX_VALUE_LENGTH): string {
+  try {
+    const seen = new WeakSet();
+
+    const serialized = JSON.stringify(value, (key, val) => {
+      // Redact sensitive keys
+      if (key && SENSITIVE_KEYS.has(key.toLowerCase())) {
+        return '[REDACTED]';
+      }
+
+      // Handle BigInt
+      if (typeof val === 'bigint') {
+        return val.toString();
+      }
+
+      // Handle circular references
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) {
+          return '[Circular]';
+        }
+        seen.add(val);
+      }
+
+      return val;
+    }, 2);
+
+    // Truncate if too long
+    if (serialized && serialized.length > maxLength) {
+      return serialized.slice(0, maxLength) + '... [truncated]';
+    }
+
+    return serialized ?? '[undefined]';
+  } catch {
+    return '[unserializable]';
+  }
+}
+
+/**
+ * Redact sensitive fields from an object (shallow copy).
+ */
+function redactSensitive(obj: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!obj || typeof obj !== 'object') {
+    return null;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+      result[key] = '[REDACTED]';
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 async function createZipArchive(workspacePath: string): Promise<string> {
   const zipPath = path.join(workspacePath, '.dead-code-hunter-repo.zip');
 
@@ -120,30 +197,36 @@ async function run(): Promise<void> {
     }
 
   } catch (error: any) {
-    // Log full error details for debugging
+    // Log error details for debugging (using debug level for potentially sensitive data)
     core.info('--- Error Debug Info ---');
-    core.info(`Error type: ${error?.constructor?.name}`);
-    core.info(`Error message: ${error?.message}`);
-    core.info(`Error name: ${error?.name}`);
+    core.info(`Error type: ${error?.constructor?.name ?? 'unknown'}`);
+    core.info(`Error message: ${error?.message ?? 'no message'}`);
+    core.info(`Error name: ${error?.name ?? 'no name'}`);
 
     // Check various error structures used by different HTTP clients
-    if (error?.response) {
-      core.info(`Response status: ${error.response.status}`);
-      core.info(`Response statusText: ${error.response.statusText}`);
-      core.info(`Response data: ${JSON.stringify(error.response.data, null, 2)}`);
-      core.info(`Response headers: ${JSON.stringify(error.response.headers, null, 2)}`);
-    }
-    if (error?.body) {
-      core.info(`Error body: ${JSON.stringify(error.body, null, 2)}`);
-    }
-    if (error?.status) {
-      core.info(`Error status: ${error.status}`);
-    }
-    if (error?.statusCode) {
-      core.info(`Error statusCode: ${error.statusCode}`);
-    }
-    if (error?.cause) {
-      core.info(`Error cause: ${JSON.stringify(error.cause, null, 2)}`);
+    // Use core.debug for detailed/sensitive info, core.info for safe summaries
+    try {
+      if (error?.response) {
+        core.info(`Response status: ${error.response.status ?? 'unknown'}`);
+        core.info(`Response statusText: ${error.response.statusText ?? 'unknown'}`);
+        core.info(`Response data: ${safeSerialize(error.response.data)}`);
+        // Headers may contain sensitive values - use debug level
+        core.debug(`Response headers: ${safeSerialize(redactSensitive(error.response.headers))}`);
+      }
+      if (error?.body) {
+        core.info(`Error body: ${safeSerialize(error.body)}`);
+      }
+      if (error?.status) {
+        core.info(`Error status: ${error.status}`);
+      }
+      if (error?.statusCode) {
+        core.info(`Error statusCode: ${error.statusCode}`);
+      }
+      if (error?.cause) {
+        core.debug(`Error cause: ${safeSerialize(error.cause)}`);
+      }
+    } catch {
+      core.debug('Failed to serialize some error properties');
     }
     core.info('--- End Debug Info ---');
 
@@ -165,10 +248,10 @@ async function run(): Promise<void> {
         error?.message ||
         '';
       if (typeof apiMessage !== 'string') {
-        apiMessage = JSON.stringify(apiMessage);
+        apiMessage = safeSerialize(apiMessage, 500);
       }
     } catch {
-      // Ignore parsing errors
+      apiMessage = '';
     }
 
     if (status === 401) {
