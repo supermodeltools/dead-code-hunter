@@ -32575,21 +32575,65 @@ async function run() {
         }
     }
     catch (error) {
+        let errorMessage = 'An unknown error occurred';
+        let helpText = '';
         if (error.response) {
             const status = error.response.status;
+            // Try to extract error details from response body
+            let apiMessage = '';
+            try {
+                const responseData = error.response.data;
+                if (typeof responseData === 'string') {
+                    apiMessage = responseData;
+                }
+                else if (responseData?.message) {
+                    apiMessage = responseData.message;
+                }
+                else if (responseData?.error) {
+                    apiMessage = responseData.error;
+                }
+            }
+            catch {
+                // Ignore parsing errors
+            }
             if (status === 401) {
-                core.error('Invalid API key. Get your key at https://dashboard.supermodeltools.com');
+                errorMessage = 'Invalid API key';
+                helpText = 'Get your key at https://dashboard.supermodeltools.com';
+            }
+            else if (status === 500) {
+                errorMessage = apiMessage || 'Internal server error';
+                // Check for common issues and provide guidance
+                if (apiMessage.includes('Nested archives')) {
+                    helpText = 'Your repository contains nested archive files (.zip, .tar, etc.). ' +
+                        'Add them to .gitattributes with "export-ignore" to exclude from analysis. ' +
+                        'Example: tests/fixtures/*.zip export-ignore';
+                }
+                else if (apiMessage.includes('exceeds maximum')) {
+                    helpText = 'Your repository or a file within it exceeds size limits. ' +
+                        'Consider excluding large files using .gitattributes with "export-ignore".';
+                }
+            }
+            else if (status === 413) {
+                errorMessage = 'Repository archive too large';
+                helpText = 'Reduce archive size by excluding large files in .gitattributes';
+            }
+            else if (status === 429) {
+                errorMessage = 'Rate limit exceeded';
+                helpText = 'Please wait before retrying';
             }
             else {
-                core.error(`API error (${status})`);
+                errorMessage = apiMessage || `API error (${status})`;
+            }
+            core.error(`Error: ${errorMessage}`);
+            if (helpText) {
+                core.error(`Help: ${helpText}`);
             }
         }
-        if (error instanceof Error) {
-            core.setFailed(error.message);
+        else if (error instanceof Error) {
+            errorMessage = error.message;
+            core.error(`Error: ${errorMessage}`);
         }
-        else {
-            core.setFailed('An unknown error occurred');
-        }
+        core.setFailed(errorMessage);
     }
 }
 run();
