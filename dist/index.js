@@ -32486,6 +32486,7 @@ const exec = __importStar(__nccwpck_require__(5236));
 const github = __importStar(__nccwpck_require__(3228));
 const fs = __importStar(__nccwpck_require__(1943));
 const path = __importStar(__nccwpck_require__(6928));
+const crypto_1 = __nccwpck_require__(6982);
 const sdk_1 = __nccwpck_require__(6381);
 const dead_code_1 = __nccwpck_require__(1655);
 /** Fields that should be redacted from logs */
@@ -32579,9 +32580,8 @@ async function generateIdempotencyKey(workspacePath) {
     });
     const commitHash = output.trim();
     const repoName = path.basename(workspacePath);
-    // Add timestamp to ensure unique key per run (avoids 409 conflicts on re-runs)
-    const timestamp = Date.now();
-    return `${repoName}:deadcode:${commitHash}:${timestamp}`;
+    // Use UUID to ensure unique key per run (avoids 409 conflicts, scales to many concurrent users)
+    return `${repoName}:deadcode:${commitHash}:${(0, crypto_1.randomUUID)()}`;
 }
 async function run() {
     try {
