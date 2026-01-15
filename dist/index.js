@@ -32575,63 +32575,87 @@ async function run() {
         }
     }
     catch (error) {
+        // Log full error details for debugging
+        core.info('--- Error Debug Info ---');
+        core.info(`Error type: ${error?.constructor?.name}`);
+        core.info(`Error message: ${error?.message}`);
+        core.info(`Error name: ${error?.name}`);
+        // Check various error structures used by different HTTP clients
+        if (error?.response) {
+            core.info(`Response status: ${error.response.status}`);
+            core.info(`Response statusText: ${error.response.statusText}`);
+            core.info(`Response data: ${JSON.stringify(error.response.data, null, 2)}`);
+            core.info(`Response headers: ${JSON.stringify(error.response.headers, null, 2)}`);
+        }
+        if (error?.body) {
+            core.info(`Error body: ${JSON.stringify(error.body, null, 2)}`);
+        }
+        if (error?.status) {
+            core.info(`Error status: ${error.status}`);
+        }
+        if (error?.statusCode) {
+            core.info(`Error statusCode: ${error.statusCode}`);
+        }
+        if (error?.cause) {
+            core.info(`Error cause: ${JSON.stringify(error.cause, null, 2)}`);
+        }
+        core.info('--- End Debug Info ---');
         let errorMessage = 'An unknown error occurred';
         let helpText = '';
-        if (error.response) {
-            const status = error.response.status;
-            // Try to extract error details from response body
-            let apiMessage = '';
-            try {
-                const responseData = error.response.data;
-                if (typeof responseData === 'string') {
-                    apiMessage = responseData;
-                }
-                else if (responseData?.message) {
-                    apiMessage = responseData.message;
-                }
-                else if (responseData?.error) {
-                    apiMessage = responseData.error;
-                }
-            }
-            catch {
-                // Ignore parsing errors
-            }
-            if (status === 401) {
-                errorMessage = 'Invalid API key';
-                helpText = 'Get your key at https://dashboard.supermodeltools.com';
-            }
-            else if (status === 500) {
-                errorMessage = apiMessage || 'Internal server error';
-                // Check for common issues and provide guidance
-                if (apiMessage.includes('Nested archives')) {
-                    helpText = 'Your repository contains nested archive files (.zip, .tar, etc.). ' +
-                        'Add them to .gitattributes with "export-ignore" to exclude from analysis. ' +
-                        'Example: tests/fixtures/*.zip export-ignore';
-                }
-                else if (apiMessage.includes('exceeds maximum')) {
-                    helpText = 'Your repository or a file within it exceeds size limits. ' +
-                        'Consider excluding large files using .gitattributes with "export-ignore".';
-                }
-            }
-            else if (status === 413) {
-                errorMessage = 'Repository archive too large';
-                helpText = 'Reduce archive size by excluding large files in .gitattributes';
-            }
-            else if (status === 429) {
-                errorMessage = 'Rate limit exceeded';
-                helpText = 'Please wait before retrying';
-            }
-            else {
-                errorMessage = apiMessage || `API error (${status})`;
-            }
-            core.error(`Error: ${errorMessage}`);
-            if (helpText) {
-                core.error(`Help: ${helpText}`);
+        // Try multiple error structures
+        const status = error?.response?.status || error?.status || error?.statusCode;
+        let apiMessage = '';
+        // Try to extract message from various locations
+        try {
+            apiMessage =
+                error?.response?.data?.message ||
+                    error?.response?.data?.error ||
+                    error?.response?.data ||
+                    error?.body?.message ||
+                    error?.body?.error ||
+                    error?.message ||
+                    '';
+            if (typeof apiMessage !== 'string') {
+                apiMessage = JSON.stringify(apiMessage);
             }
         }
-        else if (error instanceof Error) {
-            errorMessage = error.message;
-            core.error(`Error: ${errorMessage}`);
+        catch {
+            // Ignore parsing errors
+        }
+        if (status === 401) {
+            errorMessage = 'Invalid API key';
+            helpText = 'Get your key at https://dashboard.supermodeltools.com';
+        }
+        else if (status === 500) {
+            errorMessage = apiMessage || 'Internal server error';
+            // Check for common issues and provide guidance
+            if (apiMessage.includes('Nested archives')) {
+                helpText = 'Your repository contains nested archive files (.zip, .tar, etc.). ' +
+                    'Add them to .gitattributes with "export-ignore" to exclude from analysis. ' +
+                    'Example: tests/fixtures/*.zip export-ignore';
+            }
+            else if (apiMessage.includes('exceeds maximum')) {
+                helpText = 'Your repository or a file within it exceeds size limits. ' +
+                    'Consider excluding large files using .gitattributes with "export-ignore".';
+            }
+        }
+        else if (status === 413) {
+            errorMessage = 'Repository archive too large';
+            helpText = 'Reduce archive size by excluding large files in .gitattributes';
+        }
+        else if (status === 429) {
+            errorMessage = 'Rate limit exceeded';
+            helpText = 'Please wait before retrying';
+        }
+        else if (status) {
+            errorMessage = apiMessage || `API error (${status})`;
+        }
+        else {
+            errorMessage = apiMessage || error?.message || 'An unknown error occurred';
+        }
+        core.error(`Error: ${errorMessage}`);
+        if (helpText) {
+            core.error(`Help: ${helpText}`);
         }
         core.setFailed(errorMessage);
     }
