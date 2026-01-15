@@ -3,6 +3,7 @@ import * as exec from '@actions/exec';
 import * as github from '@actions/github';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { Configuration, DefaultApi } from '@supermodeltools/sdk';
 import { findDeadCode, formatPrComment } from './dead-code';
 
@@ -112,10 +113,9 @@ async function generateIdempotencyKey(workspacePath: string): Promise<string> {
 
   const commitHash = output.trim();
   const repoName = path.basename(workspacePath);
-  // Add timestamp to ensure unique key per run (avoids 409 conflicts on re-runs)
-  const timestamp = Date.now();
 
-  return `${repoName}:deadcode:${commitHash}:${timestamp}`;
+  // Use UUID to ensure unique key per run (avoids 409 conflicts, scales to many concurrent users)
+  return `${repoName}:deadcode:${commitHash}:${randomUUID()}`;
 }
 
 async function run(): Promise<void> {
