@@ -32579,7 +32579,9 @@ async function generateIdempotencyKey(workspacePath) {
     });
     const commitHash = output.trim();
     const repoName = path.basename(workspacePath);
-    return `${repoName}:supermodel:${commitHash}`;
+    // Add timestamp to ensure unique key per run (avoids 409 conflicts on re-runs)
+    const timestamp = Date.now();
+    return `${repoName}:deadcode:${commitHash}:${timestamp}`;
 }
 async function run() {
     try {
