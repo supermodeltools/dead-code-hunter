@@ -26,3 +26,18 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  dogfood:
+    name: Self-test (dogfood)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Dead Code Hunter on itself
+        uses: ./
+        with:
+          supermodel-api-key: ${{ secrets.SUPERMODEL_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

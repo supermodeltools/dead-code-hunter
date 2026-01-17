@@ -32621,7 +32621,7 @@ async function run() {
         core.setOutput('dead-code-json', JSON.stringify(deadCode));
         // Step 6: Post PR comment if enabled
         if (commentOnPr && github.context.payload.pull_request) {
-            const token = process.env.GITHUB_TOKEN;
+            const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
             if (token) {
                 const octokit = github.getOctokit(token);
                 const comment = (0, dead_code_1.formatPrComment)(deadCode);
