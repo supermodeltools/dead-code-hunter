@@ -153,14 +153,39 @@ async function run(): Promise<void> {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    const response = await api.generateSupermodelGraph({
+    // Submit graph generation job (async API returns an envelope with status)
+    let response = await api.generateSupermodelGraph({
       idempotencyKey,
       file: zipBlob,
-    });
+    }) as any;
+
+    // Poll until the job completes or fails
+    const maxPollTime = 5 * 60 * 1000; // 5 minutes max
+    const startTime = Date.now();
+
+    while (response.status === 'pending' || response.status === 'processing') {
+      if (Date.now() - startTime > maxPollTime) {
+        throw new Error('Graph generation timed out after 5 minutes');
+      }
+
+      const waitSeconds = response.retryAfter || 5;
+      core.info(`Job ${response.jobId} is ${response.status}, retrying in ${waitSeconds}s...`);
+      await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+
+      response = await api.generateSupermodelGraph({
+        idempotencyKey,
+        file: zipBlob,
+      }) as any;
+    }
+
+    if (response.status === 'failed') {
+      throw new Error(`Graph generation failed: ${response.error || 'Unknown error'}`);
+    }
 
     // Step 4: Analyze for dead code
-    const nodes = response.graph?.nodes || [];
-    const relationships = response.graph?.relationships || [];
+    const graphData = response.result?.graph || response.graph;
+    const nodes = graphData?.nodes || [];
+    const relationships = graphData?.relationships || [];
 
     const deadCode = findDeadCode(nodes, relationships, ignorePatterns);
 

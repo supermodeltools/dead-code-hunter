@@ -36,33 +36,55 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    const response = await api.generateCallGraph({
+    let response = await api.generateCallGraph({
       idempotencyKey,
       file: zipBlob,
-    });
+    }) as any;
 
-    expect(response).toBeDefined();
-    expect(response.graph).toBeDefined();
-    expect(response.graph?.nodes).toBeDefined();
-    expect(response.graph?.relationships).toBeDefined();
-    expect(response.stats).toBeDefined();
+    // Poll until job completes
+    while (response.status === 'pending' || response.status === 'processing') {
+      const waitSeconds = response.retryAfter || 5;
+      console.log(`Job ${response.jobId} is ${response.status}, waiting ${waitSeconds}s...`);
+      await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+      response = await api.generateCallGraph({
+        idempotencyKey,
+        file: zipBlob,
+      }) as any;
+    }
 
-    console.log('API Stats:', response.stats);
-    console.log('Nodes:', response.graph?.nodes?.length);
-    console.log('Relationships:', response.graph?.relationships?.length);
-  }, 60000); // 60 second timeout for API call
+    expect(response.status).toBe('completed');
+    const graph = response.result?.graph || response.graph;
+    expect(graph).toBeDefined();
+    expect(graph?.nodes).toBeDefined();
+    expect(graph?.relationships).toBeDefined();
+
+    console.log('Nodes:', graph?.nodes?.length);
+    console.log('Relationships:', graph?.relationships?.length);
+  }, 120000); // 120 second timeout for async API
 
   it('should find dead code in the dead-code-hunter repo itself', async () => {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    const response = await api.generateCallGraph({
+    let response = await api.generateCallGraph({
       idempotencyKey,
       file: zipBlob,
-    });
+    }) as any;
 
-    const nodes = response.graph?.nodes || [];
-    const relationships = response.graph?.relationships || [];
+    // Poll until job completes
+    while (response.status === 'pending' || response.status === 'processing') {
+      const waitSeconds = response.retryAfter || 5;
+      await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+      response = await api.generateCallGraph({
+        idempotencyKey,
+        file: zipBlob,
+      }) as any;
+    }
+
+    expect(response.status).toBe('completed');
+    const graph = response.result?.graph || response.graph;
+    const nodes = graph?.nodes || [];
+    const relationships = graph?.relationships || [];
 
     const deadCode = findDeadCode(nodes, relationships);
 
@@ -80,7 +102,7 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
 
     // The test passes regardless of dead code count - we just want to verify the flow works
     expect(Array.isArray(deadCode)).toBe(true);
-  }, 60000);
+  }, 120000);
 });
 
 describe('Integration Test Prerequisites', () => {
