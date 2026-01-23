@@ -29,24 +29,29 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
     const commitHash = execSync('git rev-parse --short HEAD', { cwd: repoRoot })
       .toString()
       .trim();
-    idempotencyKey = `dead-code-hunter:call:${commitHash}`;
+    idempotencyKey = `dead-code-hunter:supermodel:${commitHash}`;
   });
 
-  it('should call the Supermodel API and get a call graph', async () => {
+  it('should call the Supermodel API and get a supermodel graph', async () => {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    let response = await api.generateCallGraph({
+    let response = await api.generateSupermodelGraph({
       idempotencyKey,
       file: zipBlob,
     }) as any;
 
-    // Poll until job completes
+    // Poll until job completes (with timeout)
+    const startTime = Date.now();
+    const maxPollTime = 100_000; // 100s (within the vitest timeout)
     while (response.status === 'pending' || response.status === 'processing') {
+      if (Date.now() - startTime > maxPollTime) {
+        throw new Error('Polling timed out in test');
+      }
       const waitSeconds = response.retryAfter || 5;
       console.log(`Job ${response.jobId} is ${response.status}, waiting ${waitSeconds}s...`);
       await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-      response = await api.generateCallGraph({
+      response = await api.generateSupermodelGraph({
         idempotencyKey,
         file: zipBlob,
       }) as any;
@@ -66,16 +71,21 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    let response = await api.generateCallGraph({
+    let response = await api.generateSupermodelGraph({
       idempotencyKey,
       file: zipBlob,
     }) as any;
 
-    // Poll until job completes
+    // Poll until job completes (with timeout)
+    const startTime = Date.now();
+    const maxPollTime = 100_000;
     while (response.status === 'pending' || response.status === 'processing') {
+      if (Date.now() - startTime > maxPollTime) {
+        throw new Error('Polling timed out in test');
+      }
       const waitSeconds = response.retryAfter || 5;
       await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-      response = await api.generateCallGraph({
+      response = await api.generateSupermodelGraph({
         idempotencyKey,
         file: zipBlob,
       }) as any;

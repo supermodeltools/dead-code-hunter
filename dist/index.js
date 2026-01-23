@@ -32630,6 +32630,9 @@ async function run() {
         if (response.status === 'failed') {
             throw new Error(`Graph generation failed: ${response.error || 'Unknown error'}`);
         }
+        if (response.status !== 'completed') {
+            throw new Error(`Unexpected job status: ${response.status}`);
+        }
         // Step 4: Analyze for dead code
         const graphData = response.result?.graph || response.graph;
         const nodes = graphData?.nodes || [];
