@@ -1,6 +1,6 @@
 # Dead Code Hunter
 
-A GitHub Action that finds unreachable functions in your codebase using [Supermodel](https://supermodeltools.com).
+A GitHub Action that finds unused code in your codebase using [Supermodel](https://supermodeltools.com) static analysis.
 
 ## Installation
 
@@ -45,6 +45,7 @@ That's it! The action will now analyze your code on every PR and comment with an
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `supermodel-api-key` | Your Supermodel API key | Yes | - |
+| `github-token` | GitHub token for posting PR comments | No | `github.token` |
 | `comment-on-pr` | Post findings as PR comment | No | `true` |
 | `fail-on-dead-code` | Fail the action if dead code found | No | `false` |
 | `ignore-patterns` | JSON array of glob patterns to ignore | No | `[]` |
@@ -61,36 +62,45 @@ That's it! The action will now analyze your code on every PR and comment with an
 
 ## What it does
 
-1. Creates a zip of your repository
-2. Sends it to Supermodel for analysis
-3. Identifies functions with no callers
-4. Filters out false positives (entry points, exports, tests)
-5. Posts findings as a PR comment
+1. Creates a zip of your repository via `git archive`
+2. Sends it to the Supermodel dead code analysis API
+3. The API performs symbol-level import analysis to identify unused exports
+4. Results are returned with confidence levels and reasons
+5. Posts findings as a PR comment with a sortable table
+
+## What it detects
+
+- **Functions** and **methods** with no callers
+- **Classes** and **interfaces** that are never referenced
+- **Types**, **variables**, and **constants** that are exported but never imported
+- **Orphaned files** whose exports have no importers anywhere in the codebase
+- **Transitively dead code** — code only called by other dead code
+
+Each finding includes a **confidence level** (high, medium, low) and a **reason** explaining why it was flagged.
 
 ## Example output
 
 > ## Dead Code Hunter
 >
-> Found **3** potentially unused functions:
+> Found **3** potentially unused code elements:
 >
-> | Function | File | Line |
-> |----------|------|------|
-> | `unusedHelper` | src/utils.ts#L42 | L42 |
-> | `oldValidator` | src/validation.ts#L15 | L15 |
-> | `deprecatedFn` | src/legacy.ts#L8 | L8 |
+> | Name | Type | File | Line | Confidence |
+> |------|------|------|------|------------|
+> | `unusedHelper` | function | src/utils.ts#L42 | L42 | :red_circle: high |
+> | `OldValidator` | class | src/validation.ts#L15 | L15 | :red_circle: high |
+> | `LegacyConfig` | interface | src/legacy.ts#L8 | L8 | :orange_circle: medium |
+>
+> <details><summary>Analysis summary</summary>
+>
+> - **Total declarations analyzed**: 150
+> - **Dead code candidates**: 3
+> - **Alive code**: 147
+> - **Analysis method**: symbol_level_import_analysis
+>
+> </details>
 >
 > ---
-> _Powered by [Supermodel](https://supermodeltools.com) graph analysis_
-
-## False positive filtering
-
-The action automatically skips:
-
-- **Entry point files**: `index.ts`, `main.ts`, `app.ts`
-- **Entry point functions**: `main`, `run`, `start`, `init`, `handler`
-- **Exported functions**: May be called from outside the repo
-- **Test files**: `*.test.ts`, `*.spec.ts`, `__tests__/**`
-- **Build output**: `node_modules`, `dist`, `build`, `target`
+> _Powered by [Supermodel](https://supermodeltools.com) dead code analysis_
 
 ## Supported languages
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filterByIgnorePatterns, formatPrComment } from '../dead-code';
+import { escapeTableCell } from '../markdown';
 import type { DeadCodeCandidate, DeadCodeAnalysisMetadata } from '@supermodeltools/sdk';
 
 function makeCandidate(overrides: Partial<DeadCodeCandidate> = {}): DeadCodeCandidate {
@@ -23,6 +24,24 @@ function makeMetadata(overrides: Partial<DeadCodeAnalysisMetadata> = {}): DeadCo
     ...overrides,
   };
 }
+
+describe('escapeTableCell', () => {
+  it('should escape pipe characters', () => {
+    expect(escapeTableCell('a|b|c')).toBe('a\\|b\\|c');
+  });
+
+  it('should replace newlines with spaces', () => {
+    expect(escapeTableCell('line1\nline2')).toBe('line1 line2');
+  });
+
+  it('should handle both pipes and newlines', () => {
+    expect(escapeTableCell('a|b\nc|d')).toBe('a\\|b c\\|d');
+  });
+
+  it('should return unchanged string when no special characters', () => {
+    expect(escapeTableCell('normalText')).toBe('normalText');
+  });
+});
 
 describe('filterByIgnorePatterns', () => {
   it('should return all candidates when no patterns provided', () => {
@@ -57,6 +76,17 @@ describe('filterByIgnorePatterns', () => {
     const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
     expect(result).toHaveLength(1);
   });
+
+  it('should filter across different code types', () => {
+    const candidates = [
+      makeCandidate({ file: 'src/generated/types.ts', type: 'interface' }),
+      makeCandidate({ file: 'src/generated/client.ts', type: 'class' }),
+      makeCandidate({ file: 'src/service.ts', type: 'function' }),
+    ];
+    const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
+    expect(result).toHaveLength(1);
+    expect(result[0].file).toBe('src/service.ts');
+  });
 });
 
 describe('formatPrComment', () => {
@@ -88,6 +118,26 @@ describe('formatPrComment', () => {
     expect(comment).toContain('`fn1`');
     expect(comment).toContain('`fn2`');
     expect(comment).toContain('class');
+  });
+
+  it('should render all supported code types', () => {
+    const types = ['function', 'class', 'method', 'interface', 'type', 'variable', 'constant'] as const;
+    const candidates = types.map((type, i) =>
+      makeCandidate({ name: `item${i}`, file: `src/${type}.ts`, line: i + 1, type })
+    );
+    const comment = formatPrComment(candidates);
+
+    for (const type of types) {
+      expect(comment).toContain(`| ${type} |`);
+    }
+  });
+
+  it('should escape pipe characters in candidate names', () => {
+    const candidates = [makeCandidate({ name: 'fn|with|pipes' })];
+    const comment = formatPrComment(candidates);
+
+    expect(comment).toContain('fn\\|with\\|pipes');
+    expect(comment).not.toContain('`fn|with|pipes`');
   });
 
   it('should truncate at 50 results', () => {
@@ -142,5 +192,12 @@ describe('formatPrComment', () => {
     const candidates = [makeCandidate()];
     const comment = formatPrComment(candidates);
     expect(comment).toContain('Powered by [Supermodel]');
+  });
+
+  it('should render table header with all columns', () => {
+    const candidates = [makeCandidate()];
+    const comment = formatPrComment(candidates);
+
+    expect(comment).toContain('| Name | Type | File | Line | Confidence |');
   });
 });

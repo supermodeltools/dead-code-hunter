@@ -33632,48 +33632,10 @@ function wrappy (fn, cb) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.truncateString = truncateString;
-exports.groupByDirectory = groupByDirectory;
-exports.fileSeverity = fileSeverity;
 exports.filterByIgnorePatterns = filterByIgnorePatterns;
 exports.formatPrComment = formatPrComment;
 const minimatch_1 = __nccwpck_require__(6507);
 const markdown_1 = __nccwpck_require__(3758);
-/**
- * Truncates a string to the given max length, appending an ellipsis if needed.
- */
-function truncateString(str, maxLen) {
-    if (str.length <= maxLen)
-        return str;
-    return str.slice(0, maxLen - 1) + '\u2026';
-}
-/**
- * Groups candidates by their containing directory.
- */
-function groupByDirectory(candidates) {
-    const groups = new Map();
-    for (const c of candidates) {
-        const dir = c.file.includes('/') ? c.file.slice(0, c.file.lastIndexOf('/')) : '.';
-        const existing = groups.get(dir);
-        if (existing) {
-            existing.push(c);
-        }
-        else {
-            groups.set(dir, [c]);
-        }
-    }
-    return groups;
-}
-/**
- * Returns a severity label based on how many dead code items are in a single file.
- */
-function fileSeverity(count) {
-    if (count === 0)
-        return 'clean';
-    if (count <= 3)
-        return 'warning';
-    return 'critical';
-}
 /**
  * Filters dead code candidates by user-provided ignore patterns.
  * The API handles all analysis server-side; this is purely for
@@ -34061,48 +34023,13 @@ run();
 
 "use strict";
 
-/**
- * Markdown formatting utilities for PR comments.
- */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.collapsible = collapsible;
-exports.badge = badge;
-exports.barChart = barChart;
 exports.escapeTableCell = escapeTableCell;
-exports.numberedList = numberedList;
-/**
- * Wraps text in a collapsible details/summary block.
- */
-function collapsible(summary, body) {
-    return `<details><summary>${summary}</summary>\n\n${body}\n\n</details>`;
-}
-/**
- * Creates a markdown badge image link.
- */
-function badge(label, value, color) {
-    const encodedLabel = encodeURIComponent(label);
-    const encodedValue = encodeURIComponent(value);
-    return `![${label}](https://img.shields.io/badge/${encodedLabel}-${encodedValue}-${color})`;
-}
-/**
- * Renders a horizontal bar chart using unicode block characters.
- */
-function barChart(value, max, width = 20) {
-    const filled = Math.round((value / max) * width);
-    const empty = width - filled;
-    return '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
-}
 /**
  * Escapes pipe characters for safe rendering inside markdown tables.
  */
 function escapeTableCell(text) {
     return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
-}
-/**
- * Converts a flat list into a markdown numbered list.
- */
-function numberedList(items) {
-    return items.map((item, i) => `${i + 1}. ${item}`).join('\n');
 }
 
 
