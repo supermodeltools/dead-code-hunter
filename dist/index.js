@@ -33638,6 +33638,7 @@ exports.fileSeverity = fileSeverity;
 exports.filterByIgnorePatterns = filterByIgnorePatterns;
 exports.formatPrComment = formatPrComment;
 const minimatch_1 = __nccwpck_require__(6507);
+const markdown_1 = __nccwpck_require__(3758);
 /**
  * Truncates a string to the given max length, appending an ellipsis if needed.
  */
@@ -33699,7 +33700,7 @@ No dead code found! Your codebase is clean.`;
         const fileLink = dc.line ? `${dc.file}#L${dc.line}` : dc.file;
         const badge = dc.confidence === 'high' ? ':red_circle:' :
             dc.confidence === 'medium' ? ':orange_circle:' : ':yellow_circle:';
-        return `| \`${dc.name}\` | ${dc.type} | ${fileLink} | ${lineInfo} | ${badge} ${dc.confidence} |`;
+        return `| \`${(0, markdown_1.escapeTableCell)(dc.name)}\` | ${dc.type} | ${fileLink} | ${lineInfo} | ${badge} ${dc.confidence} |`;
     })
         .join('\n');
     let comment = `## Dead Code Hunter
@@ -33931,6 +33932,11 @@ async function run() {
         // Step 4: Apply client-side ignore patterns
         const candidates = (0, dead_code_1.filterByIgnorePatterns)(result.deadCodeCandidates, ignorePatterns);
         core.info(`Found ${candidates.length} potentially unused code elements (${result.metadata.totalDeclarations} declarations analyzed)`);
+        core.info(`Analysis method: ${result.metadata.analysisMethod}`);
+        core.info(`Alive: ${result.metadata.aliveCode}, Entry points: ${result.entryPoints.length}, Root files: ${result.metadata.rootFilesCount ?? 'n/a'}`);
+        for (const dc of candidates) {
+            core.info(`  [${dc.confidence}] ${dc.type} ${dc.name} @ ${dc.file}:${dc.line} — ${dc.reason}`);
+        }
         // Step 5: Set outputs
         core.setOutput('dead-code-count', candidates.length);
         core.setOutput('dead-code-json', JSON.stringify(candidates));
@@ -34046,6 +34052,58 @@ async function run() {
     }
 }
 run();
+
+
+/***/ }),
+
+/***/ 3758:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Markdown formatting utilities for PR comments.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.collapsible = collapsible;
+exports.badge = badge;
+exports.barChart = barChart;
+exports.escapeTableCell = escapeTableCell;
+exports.numberedList = numberedList;
+/**
+ * Wraps text in a collapsible details/summary block.
+ */
+function collapsible(summary, body) {
+    return `<details><summary>${summary}</summary>\n\n${body}\n\n</details>`;
+}
+/**
+ * Creates a markdown badge image link.
+ */
+function badge(label, value, color) {
+    const encodedLabel = encodeURIComponent(label);
+    const encodedValue = encodeURIComponent(value);
+    return `![${label}](https://img.shields.io/badge/${encodedLabel}-${encodedValue}-${color})`;
+}
+/**
+ * Renders a horizontal bar chart using unicode block characters.
+ */
+function barChart(value, max, width = 20) {
+    const filled = Math.round((value / max) * width);
+    const empty = width - filled;
+    return '\u2588'.repeat(filled) + '\u2591'.repeat(empty);
+}
+/**
+ * Escapes pipe characters for safe rendering inside markdown tables.
+ */
+function escapeTableCell(text) {
+    return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+/**
+ * Converts a flat list into a markdown numbered list.
+ */
+function numberedList(items) {
+    return items.map((item, i) => `${i + 1}. ${item}`).join('\n');
+}
 
 
 /***/ }),

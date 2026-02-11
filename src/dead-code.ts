@@ -1,5 +1,6 @@
 import { minimatch } from 'minimatch';
 import type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetadata } from '@supermodeltools/sdk';
+import { escapeTableCell } from './markdown';
 
 export type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetadata };
 
@@ -70,7 +71,7 @@ No dead code found! Your codebase is clean.`;
       const fileLink = dc.line ? `${dc.file}#L${dc.line}` : dc.file;
       const badge = dc.confidence === 'high' ? ':red_circle:' :
                     dc.confidence === 'medium' ? ':orange_circle:' : ':yellow_circle:';
-      return `| \`${dc.name}\` | ${dc.type} | ${fileLink} | ${lineInfo} | ${badge} ${dc.confidence} |`;
+      return `| \`${escapeTableCell(dc.name)}\` | ${dc.type} | ${fileLink} | ${lineInfo} | ${badge} ${dc.confidence} |`;
     })
     .join('\n');
 

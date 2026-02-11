@@ -198,6 +198,11 @@ async function run(): Promise<void> {
     const candidates = filterByIgnorePatterns(result.deadCodeCandidates, ignorePatterns);
 
     core.info(`Found ${candidates.length} potentially unused code elements (${result.metadata.totalDeclarations} declarations analyzed)`);
+    core.info(`Analysis method: ${result.metadata.analysisMethod}`);
+    core.info(`Alive: ${result.metadata.aliveCode}, Entry points: ${result.entryPoints.length}, Root files: ${result.metadata.rootFilesCount ?? 'n/a'}`);
+    for (const dc of candidates) {
+      core.info(`  [${dc.confidence}] ${dc.type} ${dc.name} @ ${dc.file}:${dc.line} — ${dc.reason}`);
+    }
 
     // Step 5: Set outputs
     core.setOutput('dead-code-count', candidates.length);
