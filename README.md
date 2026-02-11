@@ -33,7 +33,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: supermodeltools/dead-code-hunter@v1
+      - uses: supermodeltools/dead-code-hunter@v2
         with:
           supermodel-api-key: ${{ secrets.SUPERMODEL_API_KEY }}
 ```
@@ -53,7 +53,7 @@ That's it! The action will now analyze your code on every PR and comment with an
 ### Example with options
 
 ```yaml
-- uses: supermodeltools/dead-code-hunter@v1
+- uses: supermodeltools/dead-code-hunter@v2
   with:
     supermodel-api-key: ${{ secrets.SUPERMODEL_API_KEY }}
     fail-on-dead-code: true
