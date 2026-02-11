@@ -1,208 +1,61 @@
 import { describe, it, expect } from 'vitest';
-import {
-  findDeadCode,
-  isEntryPointFile,
-  isEntryPointFunction,
-  shouldIgnoreFile,
-  formatPrComment,
-  DeadCodeResult,
-} from '../dead-code';
-import { CodeGraphNode, CodeGraphRelationship } from '@supermodeltools/sdk';
+import { filterByIgnorePatterns, formatPrComment } from '../dead-code';
+import type { DeadCodeCandidate, DeadCodeAnalysisMetadata } from '@supermodeltools/sdk';
 
-describe('isEntryPointFile', () => {
-  it('should identify index files as entry points', () => {
-    expect(isEntryPointFile('src/index.ts')).toBe(true);
-    expect(isEntryPointFile('lib/index.js')).toBe(true);
+function makeCandidate(overrides: Partial<DeadCodeCandidate> = {}): DeadCodeCandidate {
+  return {
+    file: 'src/utils.ts',
+    name: 'unusedFn',
+    line: 10,
+    type: 'function' as const,
+    confidence: 'high' as const,
+    reason: 'No callers found in codebase',
+    ...overrides,
+  };
+}
+
+function makeMetadata(overrides: Partial<DeadCodeAnalysisMetadata> = {}): DeadCodeAnalysisMetadata {
+  return {
+    totalDeclarations: 100,
+    deadCodeCandidates: 5,
+    aliveCode: 95,
+    analysisMethod: 'parse_graph + call_graph',
+    ...overrides,
+  };
+}
+
+describe('filterByIgnorePatterns', () => {
+  it('should return all candidates when no patterns provided', () => {
+    const candidates = [makeCandidate(), makeCandidate({ file: 'src/helpers.ts' })];
+    const result = filterByIgnorePatterns(candidates, []);
+    expect(result).toHaveLength(2);
   });
 
-  it('should identify main files as entry points', () => {
-    expect(isEntryPointFile('src/main.ts')).toBe(true);
-    expect(isEntryPointFile('main.js')).toBe(true);
-  });
-
-  it('should identify app files as entry points', () => {
-    expect(isEntryPointFile('src/app.ts')).toBe(true);
-  });
-
-  it('should identify test files as entry points', () => {
-    expect(isEntryPointFile('src/utils.test.ts')).toBe(true);
-    expect(isEntryPointFile('src/utils.spec.js')).toBe(true);
-    expect(isEntryPointFile('src/__tests__/utils.ts')).toBe(true);
-  });
-
-  it('should not identify regular files as entry points', () => {
-    expect(isEntryPointFile('src/utils.ts')).toBe(false);
-    expect(isEntryPointFile('src/helpers/format.js')).toBe(false);
-  });
-});
-
-describe('isEntryPointFunction', () => {
-  it('should identify common entry point function names', () => {
-    expect(isEntryPointFunction('main')).toBe(true);
-    expect(isEntryPointFunction('run')).toBe(true);
-    expect(isEntryPointFunction('start')).toBe(true);
-    expect(isEntryPointFunction('init')).toBe(true);
-    expect(isEntryPointFunction('handler')).toBe(true);
-  });
-
-  it('should be case-insensitive', () => {
-    expect(isEntryPointFunction('Main')).toBe(true);
-    expect(isEntryPointFunction('MAIN')).toBe(true);
-    expect(isEntryPointFunction('Handler')).toBe(true);
-  });
-
-  it('should identify HTTP method handlers', () => {
-    expect(isEntryPointFunction('GET')).toBe(true);
-    expect(isEntryPointFunction('POST')).toBe(true);
-    expect(isEntryPointFunction('PUT')).toBe(true);
-    expect(isEntryPointFunction('DELETE')).toBe(true);
-  });
-
-  it('should not identify regular function names', () => {
-    expect(isEntryPointFunction('processData')).toBe(false);
-    expect(isEntryPointFunction('calculateTotal')).toBe(false);
-  });
-});
-
-describe('shouldIgnoreFile', () => {
-  it('should ignore node_modules', () => {
-    expect(shouldIgnoreFile('node_modules/lodash/index.js')).toBe(true);
-  });
-
-  it('should ignore dist folder', () => {
-    expect(shouldIgnoreFile('dist/index.js')).toBe(true);
-  });
-
-  it('should ignore build folder', () => {
-    expect(shouldIgnoreFile('build/main.js')).toBe(true);
-  });
-
-  it('should ignore test files', () => {
-    expect(shouldIgnoreFile('src/utils.test.ts')).toBe(true);
-    expect(shouldIgnoreFile('src/utils.spec.js')).toBe(true);
-  });
-
-  it('should not ignore regular source files', () => {
-    expect(shouldIgnoreFile('src/utils.ts')).toBe(false);
-    expect(shouldIgnoreFile('lib/helpers.js')).toBe(false);
-  });
-
-  it('should respect custom ignore patterns', () => {
-    expect(shouldIgnoreFile('src/generated/api.ts', ['**/generated/**'])).toBe(true);
-    expect(shouldIgnoreFile('src/utils.ts', ['**/generated/**'])).toBe(false);
-  });
-});
-
-describe('findDeadCode', () => {
-  it('should find functions with no callers', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'usedFunction', filePath: 'src/utils.ts' } },
-      { id: 'fn2', labels: ['Function'], properties: { name: 'unusedFunction', filePath: 'src/helpers.ts' } },
+  it('should filter candidates matching ignore patterns', () => {
+    const candidates = [
+      makeCandidate({ file: 'src/generated/api.ts' }),
+      makeCandidate({ file: 'src/utils.ts' }),
     ];
-
-    const relationships: CodeGraphRelationship[] = [
-      { id: 'rel1', type: 'calls', startNode: 'fn3', endNode: 'fn1' },
-    ];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(1);
-    expect(deadCode[0].name).toBe('unusedFunction');
+    const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
+    expect(result).toHaveLength(1);
+    expect(result[0].file).toBe('src/utils.ts');
   });
 
-  it('should not report functions that are called', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'calledFunction', filePath: 'src/utils.ts' } },
+  it('should support multiple ignore patterns', () => {
+    const candidates = [
+      makeCandidate({ file: 'src/generated/api.ts' }),
+      makeCandidate({ file: 'src/migrations/001.ts' }),
+      makeCandidate({ file: 'src/utils.ts' }),
     ];
-
-    const relationships: CodeGraphRelationship[] = [
-      { id: 'rel1', type: 'calls', startNode: 'fn2', endNode: 'fn1' },
-    ];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(0);
+    const result = filterByIgnorePatterns(candidates, ['**/generated/**', '**/migrations/**']);
+    expect(result).toHaveLength(1);
+    expect(result[0].file).toBe('src/utils.ts');
   });
 
-  it('should skip exported functions', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'exportedFn', filePath: 'src/utils.ts', exported: true } },
-      { id: 'fn2', labels: ['Function'], properties: { name: 'notExported', filePath: 'src/helpers.ts' } },
-    ];
-
-    const relationships: CodeGraphRelationship[] = [];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(1);
-    expect(deadCode[0].name).toBe('notExported');
-  });
-
-  it('should skip entry point functions', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'main', filePath: 'src/cli.ts' } },
-      { id: 'fn2', labels: ['Function'], properties: { name: 'unusedHelper', filePath: 'src/helpers.ts' } },
-    ];
-
-    const relationships: CodeGraphRelationship[] = [];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(1);
-    expect(deadCode[0].name).toBe('unusedHelper');
-  });
-
-  it('should skip functions in entry point files', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'someFunc', filePath: 'src/index.ts' } },
-      { id: 'fn2', labels: ['Function'], properties: { name: 'unusedHelper', filePath: 'src/helpers.ts' } },
-    ];
-
-    const relationships: CodeGraphRelationship[] = [];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(1);
-    expect(deadCode[0].name).toBe('unusedHelper');
-  });
-
-  it('should skip functions in ignored paths', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'testHelper', filePath: 'src/__tests__/helpers.ts' } },
-      { id: 'fn2', labels: ['Function'], properties: { name: 'unusedHelper', filePath: 'src/helpers.ts' } },
-    ];
-
-    const relationships: CodeGraphRelationship[] = [];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(1);
-    expect(deadCode[0].name).toBe('unusedHelper');
-  });
-
-  it('should only consider Function nodes', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'file1', labels: ['File'], properties: { name: 'utils.ts', filePath: 'src/utils.ts' } },
-      { id: 'fn1', labels: ['Function'], properties: { name: 'unusedFn', filePath: 'src/helpers.ts' } },
-    ];
-
-    const relationships: CodeGraphRelationship[] = [];
-
-    const deadCode = findDeadCode(nodes, relationships);
-
-    expect(deadCode).toHaveLength(1);
-    expect(deadCode[0].name).toBe('unusedFn');
-  });
-
-  it('should include line numbers when available', () => {
-    const nodes: CodeGraphNode[] = [
-      { id: 'fn1', labels: ['Function'], properties: { name: 'unusedFn', filePath: 'src/helpers.ts', startLine: 10, endLine: 20 } },
-    ];
-
-    const deadCode = findDeadCode(nodes, []);
-
-    expect(deadCode[0].startLine).toBe(10);
-    expect(deadCode[0].endLine).toBe(20);
+  it('should not filter when patterns do not match', () => {
+    const candidates = [makeCandidate({ file: 'src/utils.ts' })];
+    const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
+    expect(result).toHaveLength(1);
   });
 });
 
@@ -213,49 +66,81 @@ describe('formatPrComment', () => {
     expect(comment).toContain('codebase is clean');
   });
 
-  it('should format single result', () => {
-    const deadCode: DeadCodeResult[] = [
-      { id: 'fn1', name: 'unusedFn', filePath: 'src/utils.ts', startLine: 10 },
-    ];
+  it('should format single result with type and confidence', () => {
+    const candidates = [makeCandidate()];
+    const comment = formatPrComment(candidates);
 
-    const comment = formatPrComment(deadCode);
-
-    expect(comment).toContain('1** potentially unused function');
+    expect(comment).toContain('1** potentially unused code element:');
     expect(comment).toContain('`unusedFn`');
+    expect(comment).toContain('function');
     expect(comment).toContain('src/utils.ts#L10');
+    expect(comment).toContain('high');
   });
 
   it('should format multiple results', () => {
-    const deadCode: DeadCodeResult[] = [
-      { id: 'fn1', name: 'unusedFn1', filePath: 'src/utils.ts', startLine: 10 },
-      { id: 'fn2', name: 'unusedFn2', filePath: 'src/helpers.ts', startLine: 20 },
+    const candidates = [
+      makeCandidate({ name: 'fn1', file: 'src/a.ts', line: 1 }),
+      makeCandidate({ name: 'fn2', file: 'src/b.ts', line: 2, type: 'class' as const }),
     ];
+    const comment = formatPrComment(candidates);
 
-    const comment = formatPrComment(deadCode);
-
-    expect(comment).toContain('2** potentially unused functions');
-    expect(comment).toContain('`unusedFn1`');
-    expect(comment).toContain('`unusedFn2`');
+    expect(comment).toContain('2** potentially unused code elements');
+    expect(comment).toContain('`fn1`');
+    expect(comment).toContain('`fn2`');
+    expect(comment).toContain('class');
   });
 
   it('should truncate at 50 results', () => {
-    const deadCode: DeadCodeResult[] = Array.from({ length: 60 }, (_, i) => ({
-      id: `fn${i}`,
-      name: `unusedFn${i}`,
-      filePath: `src/file${i}.ts`,
-    }));
+    const candidates = Array.from({ length: 60 }, (_, i) =>
+      makeCandidate({ name: `fn${i}`, file: `src/file${i}.ts`, line: i + 1 })
+    );
+    const comment = formatPrComment(candidates);
 
-    const comment = formatPrComment(deadCode);
-
-    expect(comment).toContain('60** potentially unused functions');
+    expect(comment).toContain('60** potentially unused code elements');
     expect(comment).toContain('and 10 more');
   });
 
-  it('should include Supermodel attribution when dead code found', () => {
-    const deadCode: DeadCodeResult[] = [
-      { id: 'fn1', name: 'unusedFn', filePath: 'src/utils.ts' },
+  it('should include metadata details section when provided', () => {
+    const candidates = [makeCandidate()];
+    const metadata = makeMetadata({ transitiveDeadCount: 3, symbolLevelDeadCount: 7 });
+    const comment = formatPrComment(candidates, metadata);
+
+    expect(comment).toContain('Analysis summary');
+    expect(comment).toContain('Total declarations analyzed');
+    expect(comment).toContain('100');
+    expect(comment).toContain('parse_graph + call_graph');
+    expect(comment).toContain('Transitive dead');
+    expect(comment).toContain('3');
+    expect(comment).toContain('Symbol-level dead');
+    expect(comment).toContain('7');
+  });
+
+  it('should omit optional metadata fields when not present', () => {
+    const candidates = [makeCandidate()];
+    const metadata = makeMetadata();
+    const comment = formatPrComment(candidates, metadata);
+
+    expect(comment).toContain('Analysis summary');
+    expect(comment).not.toContain('Transitive dead');
+    expect(comment).not.toContain('Symbol-level dead');
+  });
+
+  it('should show confidence badges', () => {
+    const candidates = [
+      makeCandidate({ confidence: 'high' as const }),
+      makeCandidate({ name: 'fn2', file: 'src/b.ts', confidence: 'medium' as const }),
+      makeCandidate({ name: 'fn3', file: 'src/c.ts', confidence: 'low' as const }),
     ];
-    const comment = formatPrComment(deadCode);
+    const comment = formatPrComment(candidates);
+
+    expect(comment).toContain(':red_circle: high');
+    expect(comment).toContain(':orange_circle: medium');
+    expect(comment).toContain(':yellow_circle: low');
+  });
+
+  it('should include Supermodel attribution', () => {
+    const candidates = [makeCandidate()];
+    const comment = formatPrComment(candidates);
     expect(comment).toContain('Powered by [Supermodel]');
   });
 });

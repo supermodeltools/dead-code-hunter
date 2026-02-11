@@ -5,7 +5,8 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { Configuration, DefaultApi } from '@supermodeltools/sdk';
-import { findDeadCode, formatPrComment } from './dead-code';
+import type { DeadCodeAnalysisResponseAsync, DeadCodeAnalysisResponse } from '@supermodeltools/sdk';
+import { filterByIgnorePatterns, formatPrComment } from './dead-code';
 
 /** Fields that should be redacted from logs */
 const SENSITIVE_KEYS = new Set([
@@ -23,6 +24,9 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 const MAX_VALUE_LENGTH = 1000;
+const MAX_POLL_ATTEMPTS = 90;
+const DEFAULT_RETRY_INTERVAL_MS = 10_000;
+const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Safely serialize a value for logging, handling circular refs, BigInt, and large values.
@@ -33,28 +37,21 @@ function safeSerialize(value: unknown, maxLength = MAX_VALUE_LENGTH): string {
     const seen = new WeakSet();
 
     const serialized = JSON.stringify(value, (key, val) => {
-      // Redact sensitive keys
       if (key && SENSITIVE_KEYS.has(key.toLowerCase())) {
         return '[REDACTED]';
       }
-
-      // Handle BigInt
       if (typeof val === 'bigint') {
         return val.toString();
       }
-
-      // Handle circular references
       if (typeof val === 'object' && val !== null) {
         if (seen.has(val)) {
           return '[Circular]';
         }
         seen.add(val);
       }
-
       return val;
     }, 2);
 
-    // Truncate if too long
     if (serialized && serialized.length > maxLength) {
       return serialized.slice(0, maxLength) + '... [truncated]';
     }
@@ -114,8 +111,50 @@ async function generateIdempotencyKey(workspacePath: string): Promise<string> {
   const commitHash = output.trim();
   const repoName = path.basename(workspacePath);
 
-  // Use UUID to ensure unique key per run (avoids 409 conflicts, scales to many concurrent users)
-  return `${repoName}:deadcode:${commitHash}:${randomUUID()}`;
+  return `${repoName}:analysis:deadcode:${commitHash}:${randomUUID()}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Polls the dead code analysis endpoint until the job completes or fails.
+ * The API returns 202 while processing; re-submitting the same request
+ * with the same idempotency key acts as a poll.
+ */
+async function pollForResult(
+  api: DefaultApi,
+  idempotencyKey: string,
+  zipBlob: Blob
+): Promise<DeadCodeAnalysisResponse> {
+  const startTime = Date.now();
+
+  for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+    const response: DeadCodeAnalysisResponseAsync = await api.generateDeadCodeAnalysis({
+      idempotencyKey,
+      file: zipBlob,
+    });
+
+    if (response.status === 'completed' && response.result) {
+      return response.result;
+    }
+
+    if (response.status === 'failed') {
+      throw new Error(`Analysis job failed: ${response.error || 'unknown error'}`);
+    }
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= POLL_TIMEOUT_MS) {
+      throw new Error(`Analysis timed out after ${Math.round(elapsed / 1000)}s (job: ${response.jobId})`);
+    }
+
+    const retryMs = (response.retryAfter ?? DEFAULT_RETRY_INTERVAL_MS / 1000) * 1000;
+    core.info(`Job ${response.jobId} status: ${response.status} (attempt ${attempt}/${MAX_POLL_ATTEMPTS}, retry in ${retryMs / 1000}s)`);
+    await sleep(retryMs);
+  }
+
+  throw new Error(`Analysis did not complete within ${MAX_POLL_ATTEMPTS} polling attempts`);
 }
 
 async function run(): Promise<void> {
@@ -128,7 +167,7 @@ async function run(): Promise<void> {
 
     const commentOnPr = core.getBooleanInput('comment-on-pr');
     const failOnDeadCode = core.getBooleanInput('fail-on-dead-code');
-    const ignorePatterns = JSON.parse(core.getInput('ignore-patterns') || '[]');
+    const ignorePatterns: string[] = JSON.parse(core.getInput('ignore-patterns') || '[]');
 
     const workspacePath = process.env.GITHUB_WORKSPACE || process.cwd();
 
@@ -140,7 +179,7 @@ async function run(): Promise<void> {
     // Step 2: Generate idempotency key
     const idempotencyKey = await generateIdempotencyKey(workspacePath);
 
-    // Step 3: Call Supermodel API
+    // Step 3: Call Supermodel dead code analysis API
     core.info('Analyzing codebase with Supermodel...');
 
     const config = new Configuration({
@@ -153,29 +192,23 @@ async function run(): Promise<void> {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    const response = await api.generateSupermodelGraph({
-      idempotencyKey,
-      file: zipBlob,
-    });
+    const result = await pollForResult(api, idempotencyKey, zipBlob);
 
-    // Step 4: Analyze for dead code
-    const nodes = response.graph?.nodes || [];
-    const relationships = response.graph?.relationships || [];
+    // Step 4: Apply client-side ignore patterns
+    const candidates = filterByIgnorePatterns(result.deadCodeCandidates, ignorePatterns);
 
-    const deadCode = findDeadCode(nodes, relationships, ignorePatterns);
-
-    core.info(`Found ${deadCode.length} potentially unused functions`);
+    core.info(`Found ${candidates.length} potentially unused code elements (${result.metadata.totalDeclarations} declarations analyzed)`);
 
     // Step 5: Set outputs
-    core.setOutput('dead-code-count', deadCode.length);
-    core.setOutput('dead-code-json', JSON.stringify(deadCode));
+    core.setOutput('dead-code-count', candidates.length);
+    core.setOutput('dead-code-json', JSON.stringify(candidates));
 
     // Step 6: Post PR comment if enabled
     if (commentOnPr && github.context.payload.pull_request) {
       const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
       if (token) {
         const octokit = github.getOctokit(token);
-        const comment = formatPrComment(deadCode);
+        const comment = formatPrComment(candidates, result.metadata);
 
         await octokit.rest.issues.createComment({
           owner: github.context.repo.owner,
@@ -194,25 +227,21 @@ async function run(): Promise<void> {
     await fs.unlink(zipPath);
 
     // Step 8: Fail if configured and dead code found
-    if (deadCode.length > 0 && failOnDeadCode) {
-      core.setFailed(`Found ${deadCode.length} potentially unused functions`);
+    if (candidates.length > 0 && failOnDeadCode) {
+      core.setFailed(`Found ${candidates.length} potentially unused code elements`);
     }
 
   } catch (error: any) {
-    // Log error details for debugging (using debug level for potentially sensitive data)
     core.info('--- Error Debug Info ---');
     core.info(`Error type: ${error?.constructor?.name ?? 'unknown'}`);
     core.info(`Error message: ${error?.message ?? 'no message'}`);
     core.info(`Error name: ${error?.name ?? 'no name'}`);
 
-    // Check various error structures used by different HTTP clients
-    // Use core.debug for detailed/sensitive info, core.info for safe summaries
     try {
       if (error?.response) {
         core.info(`Response status: ${error.response.status ?? 'unknown'}`);
         core.info(`Response statusText: ${error.response.statusText ?? 'unknown'}`);
         core.info(`Response data: ${safeSerialize(error.response.data)}`);
-        // Headers may contain sensitive values - use debug level
         core.debug(`Response headers: ${safeSerialize(redactSensitive(error.response.headers))}`);
       }
       if (error?.body) {
@@ -235,11 +264,9 @@ async function run(): Promise<void> {
     let errorMessage = 'An unknown error occurred';
     let helpText = '';
 
-    // Try multiple error structures
     const status = error?.response?.status || error?.status || error?.statusCode;
     let apiMessage = '';
 
-    // Try to extract message from various locations
     try {
       apiMessage =
         error?.response?.data?.message ||
@@ -262,7 +289,6 @@ async function run(): Promise<void> {
     } else if (status === 500) {
       errorMessage = apiMessage || 'Internal server error';
 
-      // Check for common issues and provide guidance
       if (apiMessage.includes('Nested archives')) {
         helpText = 'Your repository contains nested archive files (.zip, .tar, etc.). ' +
           'Add them to .gitattributes with "export-ignore" to exclude from analysis. ' +
