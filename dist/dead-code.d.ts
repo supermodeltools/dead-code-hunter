@@ -7,6 +7,11 @@ export type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetad
  */
 export declare function filterByIgnorePatterns(candidates: DeadCodeCandidate[], ignorePatterns: string[]): DeadCodeCandidate[];
 /**
+ * Scopes dead code candidates to only files present in the changed files set.
+ * Used to limit PR comments to findings relevant to the current diff.
+ */
+export declare function filterByChangedFiles(candidates: DeadCodeCandidate[], changedFiles: Set<string>): DeadCodeCandidate[];
+/**
  * Formats dead code analysis results as a GitHub PR comment.
  */
 export declare function formatPrComment(candidates: DeadCodeCandidate[], metadata?: DeadCodeAnalysisMetadata): string;

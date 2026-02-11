@@ -18,6 +18,17 @@ export function filterByIgnorePatterns(
 }
 
 /**
+ * Scopes dead code candidates to only files present in the changed files set.
+ * Used to limit PR comments to findings relevant to the current diff.
+ */
+export function filterByChangedFiles(
+  candidates: DeadCodeCandidate[],
+  changedFiles: Set<string>
+): DeadCodeCandidate[] {
+  return candidates.filter(c => changedFiles.has(c.file));
+}
+
+/**
  * Formats dead code analysis results as a GitHub PR comment.
  */
 export function formatPrComment(

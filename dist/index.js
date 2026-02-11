@@ -33633,6 +33633,7 @@ function wrappy (fn, cb) {
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.filterByIgnorePatterns = filterByIgnorePatterns;
+exports.filterByChangedFiles = filterByChangedFiles;
 exports.formatPrComment = formatPrComment;
 const minimatch_1 = __nccwpck_require__(6507);
 const markdown_1 = __nccwpck_require__(3758);
@@ -33645,6 +33646,13 @@ function filterByIgnorePatterns(candidates, ignorePatterns) {
     if (ignorePatterns.length === 0)
         return candidates;
     return candidates.filter(c => !ignorePatterns.some(p => (0, minimatch_1.minimatch)(c.file, p)));
+}
+/**
+ * Scopes dead code candidates to only files present in the changed files set.
+ * Used to limit PR comments to findings relevant to the current diff.
+ */
+function filterByChangedFiles(candidates, changedFiles) {
+    return candidates.filter(c => changedFiles.has(c.file));
 }
 /**
  * Formats dead code analysis results as a GitHub PR comment.
@@ -33866,6 +33874,33 @@ async function pollForResult(api, idempotencyKey, zipBlob) {
     }
     throw new Error(`Analysis did not complete within ${MAX_POLL_ATTEMPTS} polling attempts`);
 }
+/**
+ * Fetches the list of files changed in the current PR.
+ * Returns null if not running in a PR context.
+ */
+async function getChangedFiles(token) {
+    const pr = github.context.payload.pull_request;
+    if (!pr)
+        return null;
+    const octokit = github.getOctokit(token);
+    const changedFiles = new Set();
+    // Paginate through all changed files (PRs can have 300+ files)
+    for (let page = 1;; page++) {
+        const { data: files } = await octokit.rest.pulls.listFiles({
+            owner: github.context.repo.owner,
+            repo: github.context.repo.repo,
+            pull_number: pr.number,
+            per_page: 100,
+            page,
+        });
+        for (const file of files) {
+            changedFiles.add(file.filename);
+        }
+        if (files.length < 100)
+            break;
+    }
+    return changedFiles;
+}
 async function run() {
     try {
         const apiKey = core.getInput('supermodel-api-key', { required: true }).trim();
@@ -33892,19 +33927,29 @@ async function run() {
         const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
         const result = await pollForResult(api, idempotencyKey, zipBlob);
         // Step 4: Apply client-side ignore patterns
-        const candidates = (0, dead_code_1.filterByIgnorePatterns)(result.deadCodeCandidates, ignorePatterns);
+        let candidates = (0, dead_code_1.filterByIgnorePatterns)(result.deadCodeCandidates, ignorePatterns);
+        // Step 5: Scope to PR diff when running on a pull request
+        const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
+        let changedFiles = null;
+        if (github.context.payload.pull_request && token) {
+            changedFiles = await getChangedFiles(token);
+            if (changedFiles) {
+                const totalBeforeScoping = candidates.length;
+                candidates = (0, dead_code_1.filterByChangedFiles)(candidates, changedFiles);
+                core.info(`Scoped to PR: ${candidates.length} findings in changed files (${totalBeforeScoping} total across repo, ${changedFiles.size} files in PR)`);
+            }
+        }
         core.info(`Found ${candidates.length} potentially unused code elements (${result.metadata.totalDeclarations} declarations analyzed)`);
         core.info(`Analysis method: ${result.metadata.analysisMethod}`);
         core.info(`Alive: ${result.metadata.aliveCode}, Entry points: ${result.entryPoints.length}, Root files: ${result.metadata.rootFilesCount ?? 'n/a'}`);
         for (const dc of candidates) {
             core.info(`  [${dc.confidence}] ${dc.type} ${dc.name} @ ${dc.file}:${dc.line} — ${dc.reason}`);
         }
-        // Step 5: Set outputs
+        // Step 6: Set outputs
         core.setOutput('dead-code-count', candidates.length);
         core.setOutput('dead-code-json', JSON.stringify(candidates));
-        // Step 6: Post PR comment if enabled
+        // Step 7: Post PR comment if enabled
         if (commentOnPr && github.context.payload.pull_request) {
-            const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
             if (token) {
                 const octokit = github.getOctokit(token);
                 const comment = (0, dead_code_1.formatPrComment)(candidates, result.metadata);
@@ -33920,9 +33965,9 @@ async function run() {
                 core.warning('GITHUB_TOKEN not available, skipping PR comment');
             }
         }
-        // Step 7: Clean up
+        // Step 8: Clean up
         await fs.unlink(zipPath);
-        // Step 8: Fail if configured and dead code found
+        // Step 9: Fail if configured and dead code found
         if (candidates.length > 0 && failOnDeadCode) {
             core.setFailed(`Found ${candidates.length} potentially unused code elements`);
         }

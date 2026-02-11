@@ -6,7 +6,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { Configuration, DefaultApi } from '@supermodeltools/sdk';
 import type { DeadCodeAnalysisResponseAsync, DeadCodeAnalysisResponse } from '@supermodeltools/sdk';
-import { filterByIgnorePatterns, formatPrComment } from './dead-code';
+import { filterByIgnorePatterns, filterByChangedFiles, formatPrComment } from './dead-code';
 
 /** Fields that should be redacted from logs */
 const SENSITIVE_KEYS = new Set([
@@ -157,6 +157,37 @@ async function pollForResult(
   throw new Error(`Analysis did not complete within ${MAX_POLL_ATTEMPTS} polling attempts`);
 }
 
+/**
+ * Fetches the list of files changed in the current PR.
+ * Returns null if not running in a PR context.
+ */
+async function getChangedFiles(token: string): Promise<Set<string> | null> {
+  const pr = github.context.payload.pull_request;
+  if (!pr) return null;
+
+  const octokit = github.getOctokit(token);
+  const changedFiles = new Set<string>();
+
+  // Paginate through all changed files (PRs can have 300+ files)
+  for (let page = 1; ; page++) {
+    const { data: files } = await octokit.rest.pulls.listFiles({
+      owner: github.context.repo.owner,
+      repo: github.context.repo.repo,
+      pull_number: pr.number,
+      per_page: 100,
+      page,
+    });
+
+    for (const file of files) {
+      changedFiles.add(file.filename);
+    }
+
+    if (files.length < 100) break;
+  }
+
+  return changedFiles;
+}
+
 async function run(): Promise<void> {
   try {
     const apiKey = core.getInput('supermodel-api-key', { required: true }).trim();
@@ -195,7 +226,20 @@ async function run(): Promise<void> {
     const result = await pollForResult(api, idempotencyKey, zipBlob);
 
     // Step 4: Apply client-side ignore patterns
-    const candidates = filterByIgnorePatterns(result.deadCodeCandidates, ignorePatterns);
+    let candidates = filterByIgnorePatterns(result.deadCodeCandidates, ignorePatterns);
+
+    // Step 5: Scope to PR diff when running on a pull request
+    const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
+    let changedFiles: Set<string> | null = null;
+
+    if (github.context.payload.pull_request && token) {
+      changedFiles = await getChangedFiles(token);
+      if (changedFiles) {
+        const totalBeforeScoping = candidates.length;
+        candidates = filterByChangedFiles(candidates, changedFiles);
+        core.info(`Scoped to PR: ${candidates.length} findings in changed files (${totalBeforeScoping} total across repo, ${changedFiles.size} files in PR)`);
+      }
+    }
 
     core.info(`Found ${candidates.length} potentially unused code elements (${result.metadata.totalDeclarations} declarations analyzed)`);
     core.info(`Analysis method: ${result.metadata.analysisMethod}`);
@@ -204,13 +248,12 @@ async function run(): Promise<void> {
       core.info(`  [${dc.confidence}] ${dc.type} ${dc.name} @ ${dc.file}:${dc.line} — ${dc.reason}`);
     }
 
-    // Step 5: Set outputs
+    // Step 6: Set outputs
     core.setOutput('dead-code-count', candidates.length);
     core.setOutput('dead-code-json', JSON.stringify(candidates));
 
-    // Step 6: Post PR comment if enabled
+    // Step 7: Post PR comment if enabled
     if (commentOnPr && github.context.payload.pull_request) {
-      const token = core.getInput('github-token') || process.env.GITHUB_TOKEN;
       if (token) {
         const octokit = github.getOctokit(token);
         const comment = formatPrComment(candidates, result.metadata);
@@ -228,10 +271,10 @@ async function run(): Promise<void> {
       }
     }
 
-    // Step 7: Clean up
+    // Step 8: Clean up
     await fs.unlink(zipPath);
 
-    // Step 8: Fail if configured and dead code found
+    // Step 9: Fail if configured and dead code found
     if (candidates.length > 0 && failOnDeadCode) {
       core.setFailed(`Found ${candidates.length} potentially unused code elements`);
     }

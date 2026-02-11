@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterByIgnorePatterns, formatPrComment } from '../dead-code';
+import { filterByIgnorePatterns, filterByChangedFiles, formatPrComment } from '../dead-code';
 import { escapeTableCell } from '../markdown';
 import type { DeadCodeCandidate, DeadCodeAnalysisMetadata } from '@supermodeltools/sdk';
 
@@ -86,6 +86,49 @@ describe('filterByIgnorePatterns', () => {
     const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
     expect(result).toHaveLength(1);
     expect(result[0].file).toBe('src/service.ts');
+  });
+});
+
+describe('filterByChangedFiles', () => {
+  it('should only keep candidates in changed files', () => {
+    const candidates = [
+      makeCandidate({ file: 'src/changed.ts', name: 'fn1' }),
+      makeCandidate({ file: 'src/untouched.ts', name: 'fn2' }),
+      makeCandidate({ file: 'src/also-changed.ts', name: 'fn3' }),
+    ];
+    const changedFiles = new Set(['src/changed.ts', 'src/also-changed.ts']);
+    const result = filterByChangedFiles(candidates, changedFiles);
+
+    expect(result).toHaveLength(2);
+    expect(result.map(c => c.name)).toEqual(['fn1', 'fn3']);
+  });
+
+  it('should return empty array when no candidates match changed files', () => {
+    const candidates = [
+      makeCandidate({ file: 'src/unrelated.ts' }),
+    ];
+    const changedFiles = new Set(['src/changed.ts']);
+    const result = filterByChangedFiles(candidates, changedFiles);
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('should return all candidates when all files are changed', () => {
+    const candidates = [
+      makeCandidate({ file: 'src/a.ts' }),
+      makeCandidate({ file: 'src/b.ts' }),
+    ];
+    const changedFiles = new Set(['src/a.ts', 'src/b.ts', 'src/c.ts']);
+    const result = filterByChangedFiles(candidates, changedFiles);
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('should handle empty changed files set', () => {
+    const candidates = [makeCandidate()];
+    const result = filterByChangedFiles(candidates, new Set());
+
+    expect(result).toHaveLength(0);
   });
 });
 
