@@ -1,7 +1,7 @@
 {
   "name": "dead-code-hunter",
-  "version": "0.1.0",
-  "description": "GitHub Action to find unreachable functions using Supermodel call graphs",
+  "version": "0.2.0",
+  "description": "GitHub Action to find dead code using the Supermodel dead code analysis API",
   "main": "dist/index.js",
   "scripts": {
     "build": "ncc build src/index.ts -o dist",
@@ -25,7 +25,7 @@
     "@actions/core": "^1.10.1",
     "@actions/exec": "^1.1.1",
     "@actions/github": "^6.0.0",
-    "@supermodeltools/sdk": "^0.4.1",
+    "@supermodeltools/sdk": "^0.9.3",
     "minimatch": "^9.0.0"
   },
   "devDependencies": {

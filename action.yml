@@ -1,5 +1,5 @@
 name: 'Dead Code Hunter'
-description: 'Find unreachable functions in your codebase using Supermodel call graphs'
+description: 'Find unused code in your codebase using Supermodel static analysis'
 author: 'Supermodel Tools'
 
 branding:
@@ -29,9 +29,9 @@ inputs:
 
 outputs:
   dead-code-count:
-    description: 'Number of dead code functions found'
+    description: 'Number of unused code elements found'
   dead-code-json:
-    description: 'JSON array of dead code findings'
+    description: 'JSON array of dead code findings with type, confidence, and reason'
 
 runs:
   using: 'node20'
