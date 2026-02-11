@@ -4,6 +4,40 @@ import type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetad
 export type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetadata };
 
 /**
+ * Truncates a string to the given max length, appending an ellipsis if needed.
+ */
+export function truncateString(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen - 1) + '\u2026';
+}
+
+/**
+ * Groups candidates by their containing directory.
+ */
+export function groupByDirectory(candidates: DeadCodeCandidate[]): Map<string, DeadCodeCandidate[]> {
+  const groups = new Map<string, DeadCodeCandidate[]>();
+  for (const c of candidates) {
+    const dir = c.file.includes('/') ? c.file.slice(0, c.file.lastIndexOf('/')) : '.';
+    const existing = groups.get(dir);
+    if (existing) {
+      existing.push(c);
+    } else {
+      groups.set(dir, [c]);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Returns a severity label based on how many dead code items are in a single file.
+ */
+export function fileSeverity(count: number): 'clean' | 'warning' | 'critical' {
+  if (count === 0) return 'clean';
+  if (count <= 3) return 'warning';
+  return 'critical';
+}
+
+/**
  * Filters dead code candidates by user-provided ignore patterns.
  * The API handles all analysis server-side; this is purely for
  * client-side post-filtering on file paths.

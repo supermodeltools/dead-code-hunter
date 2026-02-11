@@ -33632,9 +33632,47 @@ function wrappy (fn, cb) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.truncateString = truncateString;
+exports.groupByDirectory = groupByDirectory;
+exports.fileSeverity = fileSeverity;
 exports.filterByIgnorePatterns = filterByIgnorePatterns;
 exports.formatPrComment = formatPrComment;
 const minimatch_1 = __nccwpck_require__(6507);
+/**
+ * Truncates a string to the given max length, appending an ellipsis if needed.
+ */
+function truncateString(str, maxLen) {
+    if (str.length <= maxLen)
+        return str;
+    return str.slice(0, maxLen - 1) + '\u2026';
+}
+/**
+ * Groups candidates by their containing directory.
+ */
+function groupByDirectory(candidates) {
+    const groups = new Map();
+    for (const c of candidates) {
+        const dir = c.file.includes('/') ? c.file.slice(0, c.file.lastIndexOf('/')) : '.';
+        const existing = groups.get(dir);
+        if (existing) {
+            existing.push(c);
+        }
+        else {
+            groups.set(dir, [c]);
+        }
+    }
+    return groups;
+}
+/**
+ * Returns a severity label based on how many dead code items are in a single file.
+ */
+function fileSeverity(count) {
+    if (count === 0)
+        return 'clean';
+    if (count <= 3)
+        return 'warning';
+    return 'critical';
+}
 /**
  * Filters dead code candidates by user-provided ignore patterns.
  * The API handles all analysis server-side; this is purely for

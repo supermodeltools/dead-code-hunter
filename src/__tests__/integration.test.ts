@@ -46,6 +46,7 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
   let api: DefaultApi;
   let zipPath: string;
   let idempotencyKey: string;
+  let result: DeadCodeAnalysisResponse;
 
   beforeAll(async () => {
     const config = new Configuration({
@@ -62,50 +63,73 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
     const commitHash = execSync('git rev-parse --short HEAD', { cwd: repoRoot })
       .toString()
       .trim();
-    idempotencyKey = `dead-code-hunter:analysis:deadcode:${commitHash}`;
-  });
+    idempotencyKey = `dead-code-hunter:integration:${commitHash}`;
 
-  it('should call the dead code analysis API and get results', async () => {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
+    result = await pollForResult(api, idempotencyKey, zipBlob);
+  }, 120_000);
 
-    const result = await pollForResult(api, idempotencyKey, zipBlob);
-
+  it('should return a valid response shape', () => {
     expect(result).toBeDefined();
     expect(result.metadata).toBeDefined();
     expect(result.deadCodeCandidates).toBeDefined();
     expect(result.aliveCode).toBeDefined();
     expect(result.entryPoints).toBeDefined();
     expect(result.metadata.totalDeclarations).toBeGreaterThan(0);
+    expect(typeof result.metadata.analysisMethod).toBe('string');
+  });
 
-    console.log('Metadata:', result.metadata);
-    console.log('Dead code candidates:', result.deadCodeCandidates.length);
-    console.log('Alive code:', result.aliveCode.length);
-    console.log('Entry points:', result.entryPoints.length);
-  }, 120_000);
+  it('should detect dead code in this repo', () => {
+    // We intentionally have uncalled functions in dead-code.ts and markdown.ts
+    const candidates = result.deadCodeCandidates;
 
-  it('should analyze dead code in the dead-code-hunter repo itself', async () => {
-    const zipBuffer = await fs.readFile(zipPath);
-    const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
-
-    const result = await pollForResult(api, idempotencyKey, zipBlob);
-    const candidates = filterByIgnorePatterns(result.deadCodeCandidates, []);
-
-    console.log('\n=== Dead Code Hunter Self-Analysis ===');
+    console.log('\n=== Dead Code Analysis Results ===');
     console.log(`Total declarations: ${result.metadata.totalDeclarations}`);
     console.log(`Dead code candidates: ${candidates.length}`);
     console.log(`Alive code: ${result.metadata.aliveCode}`);
     console.log(`Analysis method: ${result.metadata.analysisMethod}`);
 
-    if (candidates.length > 0) {
-      console.log('\nPotentially dead code:');
-      for (const dc of candidates.slice(0, 10)) {
-        console.log(`  - [${dc.confidence}] ${dc.name} (${dc.file}:${dc.line}) - ${dc.reason}`);
-      }
+    for (const dc of candidates) {
+      console.log(`  [${dc.confidence}] ${dc.type} ${dc.name} @ ${dc.file}:${dc.line} — ${dc.reason}`);
     }
 
-    expect(Array.isArray(candidates)).toBe(true);
-  }, 120_000);
+    expect(candidates.length).toBeGreaterThan(0);
+  });
+
+  it('should include file, name, line, type, confidence, and reason on every candidate', () => {
+    for (const dc of result.deadCodeCandidates) {
+      expect(dc.file).toBeTruthy();
+      expect(dc.name).toBeTruthy();
+      expect(dc.line).toBeGreaterThan(0);
+      expect(dc.type).toBeTruthy();
+      expect(['high', 'medium', 'low']).toContain(dc.confidence);
+      expect(dc.reason).toBeTruthy();
+    }
+  });
+
+  it('should find known dead functions by name', () => {
+    const names = result.deadCodeCandidates.map(c => c.name);
+
+    // These exist in src/dead-code.ts and src/markdown.ts but are never called
+    const knownDead = ['truncateString', 'groupByDirectory', 'fileSeverity',
+                       'badge', 'barChart', 'numberedList'];
+    const found = knownDead.filter(n => names.includes(n));
+
+    console.log(`\nKnown dead functions found: ${found.join(', ')}`);
+    console.log(`Known dead functions missed: ${knownDead.filter(n => !names.includes(n)).join(', ') || 'none'}`);
+
+    // At least some of our intentionally dead code should be detected
+    expect(found.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('should respect ignore-patterns filtering', () => {
+    const all = result.deadCodeCandidates;
+    const filtered = filterByIgnorePatterns(all, ['**/markdown.ts']);
+
+    expect(filtered.length).toBeLessThan(all.length);
+    expect(filtered.every(c => c.file !== 'src/markdown.ts')).toBe(true);
+  });
 });
 
 describe('Integration Test Prerequisites', () => {
