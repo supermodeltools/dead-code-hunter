@@ -26,6 +26,10 @@ inputs:
     description: 'JSON array of glob patterns to ignore'
     required: false
     default: '[]'
+  timeout-seconds:
+    description: 'Maximum seconds to wait for analysis to complete (default: 7200)'
+    required: false
+    default: '7200'
 
 outputs:
   dead-code-count:

@@ -24,9 +24,7 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 const MAX_VALUE_LENGTH = 1000;
-const MAX_POLL_ATTEMPTS = 90;
 const DEFAULT_RETRY_INTERVAL_MS = 10_000;
-const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Safely serialize a value for logging, handling circular refs, BigInt, and large values.
@@ -126,11 +124,13 @@ function sleep(ms: number): Promise<void> {
 async function pollForResult(
   api: DefaultApi,
   idempotencyKey: string,
-  zipBlob: Blob
+  zipBlob: Blob,
+  timeoutMs: number
 ): Promise<DeadCodeAnalysisResponse> {
   const startTime = Date.now();
+  const maxAttempts = Math.ceil(timeoutMs / DEFAULT_RETRY_INTERVAL_MS);
 
-  for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response: DeadCodeAnalysisResponseAsync = await api.generateDeadCodeAnalysis({
       idempotencyKey,
       file: zipBlob,
@@ -145,16 +145,16 @@ async function pollForResult(
     }
 
     const elapsed = Date.now() - startTime;
-    if (elapsed >= POLL_TIMEOUT_MS) {
+    if (elapsed >= timeoutMs) {
       throw new Error(`Analysis timed out after ${Math.round(elapsed / 1000)}s (job: ${response.jobId})`);
     }
 
     const retryMs = (response.retryAfter ?? DEFAULT_RETRY_INTERVAL_MS / 1000) * 1000;
-    core.info(`Job ${response.jobId} status: ${response.status} (attempt ${attempt}/${MAX_POLL_ATTEMPTS}, retry in ${retryMs / 1000}s)`);
+    core.info(`Job ${response.jobId} status: ${response.status} (attempt ${attempt}/${maxAttempts}, retry in ${retryMs / 1000}s)`);
     await sleep(retryMs);
   }
 
-  throw new Error(`Analysis did not complete within ${MAX_POLL_ATTEMPTS} polling attempts`);
+  throw new Error(`Analysis did not complete within ${maxAttempts} polling attempts`);
 }
 
 /**
@@ -199,6 +199,8 @@ async function run(): Promise<void> {
     const commentOnPr = core.getBooleanInput('comment-on-pr');
     const failOnDeadCode = core.getBooleanInput('fail-on-dead-code');
     const ignorePatterns: string[] = JSON.parse(core.getInput('ignore-patterns') || '[]');
+    const timeoutSeconds = parseInt(core.getInput('timeout-seconds') || '7200', 10);
+    const timeoutMs = timeoutSeconds * 1000;
 
     const workspacePath = process.env.GITHUB_WORKSPACE || process.cwd();
 
@@ -223,7 +225,7 @@ async function run(): Promise<void> {
     const zipBuffer = await fs.readFile(zipPath);
     const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
 
-    const result = await pollForResult(api, idempotencyKey, zipBlob);
+    const result = await pollForResult(api, idempotencyKey, zipBlob, timeoutMs);
 
     // Step 4: Apply client-side ignore patterns
     let candidates = filterByIgnorePatterns(result.deadCodeCandidates, ignorePatterns);

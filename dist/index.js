@@ -33766,9 +33766,7 @@ const SENSITIVE_KEYS = new Set([
     'x-api-key',
 ]);
 const MAX_VALUE_LENGTH = 1000;
-const MAX_POLL_ATTEMPTS = 90;
 const DEFAULT_RETRY_INTERVAL_MS = 10_000;
-const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 /**
  * Safely serialize a value for logging, handling circular refs, BigInt, and large values.
  * Redacts sensitive fields.
@@ -33851,9 +33849,10 @@ function sleep(ms) {
  * The API returns 202 while processing; re-submitting the same request
  * with the same idempotency key acts as a poll.
  */
-async function pollForResult(api, idempotencyKey, zipBlob) {
+async function pollForResult(api, idempotencyKey, zipBlob, timeoutMs) {
     const startTime = Date.now();
-    for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+    const maxAttempts = Math.ceil(timeoutMs / DEFAULT_RETRY_INTERVAL_MS);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const response = await api.generateDeadCodeAnalysis({
             idempotencyKey,
             file: zipBlob,
@@ -33865,14 +33864,14 @@ async function pollForResult(api, idempotencyKey, zipBlob) {
             throw new Error(`Analysis job failed: ${response.error || 'unknown error'}`);
         }
         const elapsed = Date.now() - startTime;
-        if (elapsed >= POLL_TIMEOUT_MS) {
+        if (elapsed >= timeoutMs) {
             throw new Error(`Analysis timed out after ${Math.round(elapsed / 1000)}s (job: ${response.jobId})`);
         }
         const retryMs = (response.retryAfter ?? DEFAULT_RETRY_INTERVAL_MS / 1000) * 1000;
-        core.info(`Job ${response.jobId} status: ${response.status} (attempt ${attempt}/${MAX_POLL_ATTEMPTS}, retry in ${retryMs / 1000}s)`);
+        core.info(`Job ${response.jobId} status: ${response.status} (attempt ${attempt}/${maxAttempts}, retry in ${retryMs / 1000}s)`);
         await sleep(retryMs);
     }
-    throw new Error(`Analysis did not complete within ${MAX_POLL_ATTEMPTS} polling attempts`);
+    throw new Error(`Analysis did not complete within ${maxAttempts} polling attempts`);
 }
 /**
  * Fetches the list of files changed in the current PR.
@@ -33910,6 +33909,8 @@ async function run() {
         const commentOnPr = core.getBooleanInput('comment-on-pr');
         const failOnDeadCode = core.getBooleanInput('fail-on-dead-code');
         const ignorePatterns = JSON.parse(core.getInput('ignore-patterns') || '[]');
+        const timeoutSeconds = parseInt(core.getInput('timeout-seconds') || '7200', 10);
+        const timeoutMs = timeoutSeconds * 1000;
         const workspacePath = process.env.GITHUB_WORKSPACE || process.cwd();
         core.info('Dead Code Hunter starting...');
         // Step 1: Create zip archive
@@ -33925,7 +33926,7 @@ async function run() {
         const api = new sdk_1.DefaultApi(config);
         const zipBuffer = await fs.readFile(zipPath);
         const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
-        const result = await pollForResult(api, idempotencyKey, zipBlob);
+        const result = await pollForResult(api, idempotencyKey, zipBlob, timeoutMs);
         // Step 4: Apply client-side ignore patterns
         let candidates = (0, dead_code_1.filterByIgnorePatterns)(result.deadCodeCandidates, ignorePatterns);
         // Step 5: Scope to PR diff when running on a pull request
