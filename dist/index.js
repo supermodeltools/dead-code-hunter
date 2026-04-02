@@ -30054,10 +30054,6 @@ async function runDeadCodeAnalysis(opts) {
     for (const pattern of opts.ignorePatterns) {
         args.push('--ignore', pattern);
     }
-    // Let the CLI enforce the timeout via context deadline so the process exits cleanly.
-    if (opts.timeoutSeconds > 0) {
-        args.push('--timeout', String(opts.timeoutSeconds));
-    }
     core.info(`Running: supermodel ${args.join(' ')}`);
     const { stdout } = await exec.getExecOutput('supermodel', args, {
         env: processEnv({ SUPERMODEL_API_KEY: opts.apiKey }),
