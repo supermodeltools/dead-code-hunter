@@ -30054,14 +30054,15 @@ async function runDeadCodeAnalysis(opts) {
     for (const pattern of opts.ignorePatterns) {
         args.push('--ignore', pattern);
     }
+    // Let the CLI enforce the timeout via context deadline so the process exits cleanly.
+    if (opts.timeoutSeconds > 0) {
+        args.push('--timeout', String(opts.timeoutSeconds));
+    }
     core.info(`Running: supermodel ${args.join(' ')}`);
-    // Wrap in a timeout promise since @actions/exec does not expose a timeout option.
-    const execPromise = exec.getExecOutput('supermodel', args, {
+    const { stdout } = await exec.getExecOutput('supermodel', args, {
         env: processEnv({ SUPERMODEL_API_KEY: opts.apiKey }),
         ignoreReturnCode: false,
     });
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Analysis timed out after ${opts.timeoutSeconds}s`)), opts.timeoutSeconds * 1000));
-    const { stdout } = await Promise.race([execPromise, timeoutPromise]);
     return JSON.parse(stdout.trim());
 }
 async function getChangedFiles(token) {
