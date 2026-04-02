@@ -1,73 +1,30 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execSync } from 'child_process';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { Configuration, DefaultApi } from '@supermodeltools/sdk';
-import type { DeadCodeAnalysisResponseAsync, DeadCodeAnalysisResponse } from '@supermodeltools/sdk';
-import { filterByIgnorePatterns } from '../dead-code';
+import type { DeadCodeResult } from '../dead-code';
 
 const API_KEY = process.env.SUPERMODEL_API_KEY;
 const SKIP_INTEGRATION = !API_KEY;
 
-async function pollForResult(
-  api: DefaultApi,
-  idempotencyKey: string,
-  zipBlob: Blob,
-  timeoutMs = 120_000
-): Promise<DeadCodeAnalysisResponse> {
-  const startTime = Date.now();
-
-  for (let attempt = 1; attempt <= 30; attempt++) {
-    const response: DeadCodeAnalysisResponseAsync = await api.generateDeadCodeAnalysis({
-      idempotencyKey,
-      file: zipBlob,
-    });
-
-    if (response.status === 'completed' && response.result) {
-      return response.result;
-    }
-
-    if (response.status === 'failed') {
-      throw new Error(`Analysis job failed: ${response.error || 'unknown error'}`);
-    }
-
-    if (Date.now() - startTime >= timeoutMs) {
-      throw new Error(`Polling timed out after ${timeoutMs}ms`);
-    }
-
-    const retryMs = (response.retryAfter ?? 10) * 1000;
-    await new Promise(resolve => setTimeout(resolve, retryMs));
+function cliAvailable(): boolean {
+  try {
+    execSync('supermodel version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
   }
-
-  throw new Error('Max polling attempts exceeded');
 }
 
-describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
-  let api: DefaultApi;
-  let zipPath: string;
-  let idempotencyKey: string;
-  let result: DeadCodeAnalysisResponse;
+describe.skipIf(SKIP_INTEGRATION || !cliAvailable())('Integration Tests', () => {
+  let result: DeadCodeResult;
 
-  beforeAll(async () => {
-    const config = new Configuration({
-      basePath: process.env.SUPERMODEL_BASE_URL || 'https://api.supermodeltools.com',
-      apiKey: API_KEY!,
+  beforeAll(() => {
+    const output = execSync('supermodel dead-code -o json', {
+      env: { ...process.env, SUPERMODEL_API_KEY: API_KEY! },
+      timeout: 120_000,
+      encoding: 'utf-8',
     });
-    api = new DefaultApi(config);
 
-    const repoRoot = path.resolve(__dirname, '../..');
-    zipPath = '/tmp/dead-code-hunter-test.zip';
-
-    execSync(`git archive -o ${zipPath} HEAD`, { cwd: repoRoot });
-
-    const commitHash = execSync('git rev-parse --short HEAD', { cwd: repoRoot })
-      .toString()
-      .trim();
-    idempotencyKey = `dead-code-hunter:integration:${commitHash}`;
-
-    const zipBuffer = await fs.readFile(zipPath);
-    const zipBlob = new Blob([zipBuffer], { type: 'application/zip' });
-    result = await pollForResult(api, idempotencyKey, zipBlob);
+    result = JSON.parse(output.trim()) as DeadCodeResult;
   }, 120_000);
 
   it('should return a valid response shape', () => {
@@ -105,25 +62,32 @@ describe.skipIf(SKIP_INTEGRATION)('Integration Tests', () => {
     }
   });
 
-  it('should support client-side ignore-patterns filtering', () => {
+  it('should respect --ignore flag via CLI (post-filter reduces results)', () => {
     const all = result.deadCodeCandidates;
-    // Even if no dead code exists, verify the filter runs without error
-    const filtered = filterByIgnorePatterns(all, ['**/nonexistent/**']);
-    expect(filtered).toHaveLength(all.length);
 
-    // Filtering with a broad pattern should return fewer or equal results
-    const aggressive = filterByIgnorePatterns(all, ['**/*.ts']);
-    expect(aggressive.length).toBeLessThanOrEqual(all.length);
+    // Run with a broad ignore pattern and verify count is less than or equal
+    if (all.length === 0) return;
+
+    const filtered = execSync('supermodel dead-code -o json --ignore "**/*.ts"', {
+      env: { ...process.env, SUPERMODEL_API_KEY: API_KEY! },
+      timeout: 120_000,
+      encoding: 'utf-8',
+    });
+    const filteredResult = JSON.parse(filtered.trim()) as DeadCodeResult;
+    expect(filteredResult.deadCodeCandidates.length).toBeLessThanOrEqual(all.length);
   });
 });
 
 describe('Integration Test Prerequisites', () => {
   it('should have SUPERMODEL_API_KEY to run integration tests', () => {
     if (SKIP_INTEGRATION) {
-      console.log('SUPERMODEL_API_KEY not set - skipping integration tests');
-      console.log('   Set the environment variable to run integration tests');
+      console.log('SUPERMODEL_API_KEY not set — skipping integration tests');
+      console.log('  Set the environment variable to run integration tests');
+    } else if (!cliAvailable()) {
+      console.log('supermodel CLI not found — skipping integration tests');
+      console.log('  Install with: curl -fsSL https://supermodeltools.com/install.sh | sh');
     } else {
-      console.log('SUPERMODEL_API_KEY is set');
+      console.log('SUPERMODEL_API_KEY is set and CLI is available');
     }
     expect(true).toBe(true);
   });

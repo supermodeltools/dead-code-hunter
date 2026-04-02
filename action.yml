@@ -23,13 +23,21 @@ inputs:
     required: false
     default: 'false'
   ignore-patterns:
-    description: 'JSON array of glob patterns to ignore'
+    description: 'JSON array of glob patterns to exclude from results (supports **)'
     required: false
     default: '[]'
+  min-confidence:
+    description: 'Minimum confidence level to report: high, medium, or low'
+    required: false
+    default: ''
   timeout-seconds:
     description: 'Maximum seconds to wait for analysis to complete (default: 7200)'
     required: false
     default: '7200'
+  cli-version:
+    description: 'Supermodel CLI version to install (default: latest)'
+    required: false
+    default: 'latest'
 
 outputs:
   dead-code-count:

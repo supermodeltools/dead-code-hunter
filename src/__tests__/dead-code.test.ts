@@ -1,21 +1,21 @@
 import { describe, it, expect } from 'vitest';
-import { filterByIgnorePatterns, filterByChangedFiles, formatPrComment } from '../dead-code';
+import { filterByChangedFiles, formatPrComment } from '../dead-code';
 import { escapeTableCell } from '../markdown';
-import type { DeadCodeCandidate, DeadCodeAnalysisMetadata } from '@supermodeltools/sdk';
+import type { DeadCodeCandidate, DeadCodeMetadata } from '../dead-code';
 
 function makeCandidate(overrides: Partial<DeadCodeCandidate> = {}): DeadCodeCandidate {
   return {
     file: 'src/utils.ts',
     name: 'unusedFn',
     line: 10,
-    type: 'function' as const,
-    confidence: 'high' as const,
+    type: 'function',
+    confidence: 'high',
     reason: 'No callers found in codebase',
     ...overrides,
   };
 }
 
-function makeMetadata(overrides: Partial<DeadCodeAnalysisMetadata> = {}): DeadCodeAnalysisMetadata {
+function makeMetadata(overrides: Partial<DeadCodeMetadata> = {}): DeadCodeMetadata {
   return {
     totalDeclarations: 100,
     deadCodeCandidates: 5,
@@ -40,52 +40,6 @@ describe('escapeTableCell', () => {
 
   it('should return unchanged string when no special characters', () => {
     expect(escapeTableCell('normalText')).toBe('normalText');
-  });
-});
-
-describe('filterByIgnorePatterns', () => {
-  it('should return all candidates when no patterns provided', () => {
-    const candidates = [makeCandidate(), makeCandidate({ file: 'src/helpers.ts' })];
-    const result = filterByIgnorePatterns(candidates, []);
-    expect(result).toHaveLength(2);
-  });
-
-  it('should filter candidates matching ignore patterns', () => {
-    const candidates = [
-      makeCandidate({ file: 'src/generated/api.ts' }),
-      makeCandidate({ file: 'src/utils.ts' }),
-    ];
-    const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
-    expect(result).toHaveLength(1);
-    expect(result[0].file).toBe('src/utils.ts');
-  });
-
-  it('should support multiple ignore patterns', () => {
-    const candidates = [
-      makeCandidate({ file: 'src/generated/api.ts' }),
-      makeCandidate({ file: 'src/migrations/001.ts' }),
-      makeCandidate({ file: 'src/utils.ts' }),
-    ];
-    const result = filterByIgnorePatterns(candidates, ['**/generated/**', '**/migrations/**']);
-    expect(result).toHaveLength(1);
-    expect(result[0].file).toBe('src/utils.ts');
-  });
-
-  it('should not filter when patterns do not match', () => {
-    const candidates = [makeCandidate({ file: 'src/utils.ts' })];
-    const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
-    expect(result).toHaveLength(1);
-  });
-
-  it('should filter across different code types', () => {
-    const candidates = [
-      makeCandidate({ file: 'src/generated/types.ts', type: 'interface' }),
-      makeCandidate({ file: 'src/generated/client.ts', type: 'class' }),
-      makeCandidate({ file: 'src/service.ts', type: 'function' }),
-    ];
-    const result = filterByIgnorePatterns(candidates, ['**/generated/**']);
-    expect(result).toHaveLength(1);
-    expect(result[0].file).toBe('src/service.ts');
   });
 });
 
@@ -153,7 +107,7 @@ describe('formatPrComment', () => {
   it('should format multiple results', () => {
     const candidates = [
       makeCandidate({ name: 'fn1', file: 'src/a.ts', line: 1 }),
-      makeCandidate({ name: 'fn2', file: 'src/b.ts', line: 2, type: 'class' as const }),
+      makeCandidate({ name: 'fn2', file: 'src/b.ts', line: 2, type: 'class' }),
     ];
     const comment = formatPrComment(candidates);
 
@@ -164,7 +118,7 @@ describe('formatPrComment', () => {
   });
 
   it('should render all supported code types', () => {
-    const types = ['function', 'class', 'method', 'interface', 'type', 'variable', 'constant'] as const;
+    const types: DeadCodeCandidate['type'][] = ['function', 'class', 'method', 'interface', 'type', 'variable', 'constant'];
     const candidates = types.map((type, i) =>
       makeCandidate({ name: `item${i}`, file: `src/${type}.ts`, line: i + 1, type })
     );
@@ -220,9 +174,9 @@ describe('formatPrComment', () => {
 
   it('should show confidence badges', () => {
     const candidates = [
-      makeCandidate({ confidence: 'high' as const }),
-      makeCandidate({ name: 'fn2', file: 'src/b.ts', confidence: 'medium' as const }),
-      makeCandidate({ name: 'fn3', file: 'src/c.ts', confidence: 'low' as const }),
+      makeCandidate({ confidence: 'high' }),
+      makeCandidate({ name: 'fn2', file: 'src/b.ts', confidence: 'medium' }),
+      makeCandidate({ name: 'fn3', file: 'src/c.ts', confidence: 'low' }),
     ];
     const comment = formatPrComment(candidates);
 

@@ -1,20 +1,43 @@
-import { minimatch } from 'minimatch';
-import type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetadata } from '@supermodeltools/sdk';
 import { escapeTableCell } from './markdown';
 
-export type { DeadCodeCandidate, DeadCodeAnalysisResponse, DeadCodeAnalysisMetadata };
+// Types matching the Supermodel CLI JSON output (`supermodel dead-code -o json`)
 
-/**
- * Filters dead code candidates by user-provided ignore patterns.
- * The API handles all analysis server-side; this is purely for
- * client-side post-filtering on file paths.
- */
-export function filterByIgnorePatterns(
-  candidates: DeadCodeCandidate[],
-  ignorePatterns: string[]
-): DeadCodeCandidate[] {
-  if (ignorePatterns.length === 0) return candidates;
-  return candidates.filter(c => !ignorePatterns.some(p => minimatch(c.file, p)));
+export type Confidence = 'high' | 'medium' | 'low';
+
+export type CodeType =
+  | 'function'
+  | 'class'
+  | 'method'
+  | 'interface'
+  | 'type'
+  | 'variable'
+  | 'constant';
+
+export interface DeadCodeCandidate {
+  file: string;
+  name: string;
+  line: number;
+  type: CodeType;
+  confidence: Confidence;
+  reason: string;
+}
+
+export interface DeadCodeMetadata {
+  totalDeclarations: number;
+  deadCodeCandidates: number;
+  aliveCode: number;
+  analysisMethod: string;
+  analysisStartTime?: string;
+  analysisEndTime?: string;
+  transitiveDeadCount?: number;
+  symbolLevelDeadCount?: number;
+}
+
+export interface DeadCodeResult {
+  metadata: DeadCodeMetadata;
+  deadCodeCandidates: DeadCodeCandidate[];
+  aliveCode: unknown[];
+  entryPoints: unknown[];
 }
 
 /**
@@ -33,7 +56,7 @@ export function filterByChangedFiles(
  */
 export function formatPrComment(
   candidates: DeadCodeCandidate[],
-  metadata?: DeadCodeAnalysisMetadata
+  metadata?: DeadCodeMetadata
 ): string {
   if (candidates.length === 0) {
     return `## Dead Code Hunter
