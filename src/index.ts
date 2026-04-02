@@ -19,7 +19,7 @@ async function installCLI(version: string): Promise<void> {
   core.info(`Installing Supermodel CLI${version !== 'latest' ? ` ${version}` : ' (latest)'}...`);
   await exec.exec(
     'sh',
-    ['-c', 'curl -fsSL https://supermodeltools.com/install.sh | sh'],
+    ['-c', 'curl -fsSL https://raw.githubusercontent.com/supermodeltools/cli/main/install.sh | sh'],
     { env }
   );
 }

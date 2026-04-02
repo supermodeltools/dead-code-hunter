@@ -30044,7 +30044,7 @@ async function installCLI(version) {
         ? processEnv({ SUPERMODEL_VERSION: version })
         : processEnv();
     core.info(`Installing Supermodel CLI${version !== 'latest' ? ` ${version}` : ' (latest)'}...`);
-    await exec.exec('sh', ['-c', 'curl -fsSL https://supermodeltools.com/install.sh | sh'], { env });
+    await exec.exec('sh', ['-c', 'curl -fsSL https://raw.githubusercontent.com/supermodeltools/cli/main/install.sh | sh'], { env });
 }
 async function runDeadCodeAnalysis(opts) {
     const args = ['dead-code', '-o', 'json'];
