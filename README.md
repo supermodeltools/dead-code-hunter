@@ -16,7 +16,7 @@ If this is useful, please star our tools — it helps us grow:
 
 ### 1. Get an API key
 
-Start a free trial at [supermodeltools.com/trial](https://supermodeltools.com/trial) to get an API key.
+**Save 40%+ on agent token costs — start free → [supermodeltools.com/trial](https://supermodeltools.com/trial)**
 
 ### 2. Add the secret to your repository
 
