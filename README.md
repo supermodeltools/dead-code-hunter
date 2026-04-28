@@ -16,7 +16,7 @@ If this is useful, please star our tools — it helps us grow:
 
 ### 1. Get an API key
 
-Sign up at [dashboard.supermodeltools.com](https://dashboard.supermodeltools.com) and create an API key.
+Start a free trial at [supermodeltools.com/trial](https://supermodeltools.com/trial) to get an API key.
 
 ### 2. Add the secret to your repository
 
